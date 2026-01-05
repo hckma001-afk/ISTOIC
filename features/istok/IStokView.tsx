@@ -9,7 +9,7 @@ import {
     Send, Zap, Radio, Server,
     Menu, Skull, PhoneCall, QrCode, ArrowRight,
     X, Flame, ShieldAlert, Image as ImageIcon, Loader2, ArrowLeft, Grid, Mic,
-    Lock as LockIcon, History as HistoryIcon, Check, RefreshCw
+    Lock as LockIcon, History as HistoryIcon, Check, RefreshCw, MessageSquare
 } from 'lucide-react';
 import useLocalStorage from '../../hooks/useLocalStorage';
 import { SidebarIStokContact, IStokSession } from './components/SidebarIStokContact';
@@ -169,9 +169,16 @@ const MessageBubble = React.memo(({ msg, setViewImage, onBurn }: { msg: Message,
     const [burnStarted, setBurnStarted] = useState(msg.type !== 'IMAGE');
 
     return (
-        <div className={`flex ${msg.sender === 'ME' ? 'justify-end' : 'justify-start'} animate-fade-in mb-4`}>
+        <div className={`flex ${msg.sender === 'ME' ? 'justify-end' : 'justify-start'} animate-fade-in mb-3`}>
             <div className={`max-w-[85%] flex flex-col ${msg.sender === 'ME' ? 'items-end' : 'items-start'}`}>
-                <div className={`p-2 rounded-2xl text-sm border ${msg.sender === 'ME' ? 'bg-blue-600/20 border-blue-500/30 text-blue-100' : 'bg-[#1a1a1a] text-neutral-200 border-white/10'} ${msg.type === 'TEXT' ? 'px-4 py-3' : 'p-1'}`}>
+                <div className={`
+                    relative rounded-2xl text-sm 
+                    ${msg.sender === 'ME' 
+                        ? 'bg-emerald-600 text-white rounded-br-none shadow-md shadow-emerald-900/20' 
+                        : 'bg-[#1a1a1a] text-neutral-200 border border-white/5 rounded-bl-none shadow-sm'
+                    } 
+                    ${msg.type === 'TEXT' ? 'px-4 py-2.5' : 'p-1.5'}
+                `}>
                     {msg.type === 'IMAGE' ? 
                         <ImageMessage 
                             content={msg.content} 
@@ -184,9 +191,10 @@ const MessageBubble = React.memo(({ msg, setViewImage, onBurn }: { msg: Message,
                     
                     {msg.ttl && burnStarted && <BurnerTimer ttl={msg.ttl} onBurn={() => onBurn(msg.id)} />}
                 </div>
-                <div className="flex items-center gap-1 mt-1 px-1">
-                    {msg.ttl && <ShieldAlert size={8} className="text-red-500" />}
-                    <span className="text-[9px] text-neutral-600">{new Date(msg.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                <div className="flex items-center gap-1 mt-1 px-1 opacity-60">
+                    {msg.ttl && <ShieldAlert size={10} className="text-red-500" />}
+                    <span className="text-[9px] font-mono tracking-wide">{new Date(msg.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                    {msg.sender === 'ME' && <Check size={12} className={msg.status === 'READ' ? 'text-emerald-500' : 'text-neutral-500'} />}
                 </div>
             </div>
         </div>
@@ -957,6 +965,19 @@ export const IStokView: React.FC = () => {
     const messageList = useMemo(() => (
         // Added overscroll-none to prevent rubber banding on the message list
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scroll bg-noise pb-4 overscroll-none">
+            {/* Empty State for Chat */}
+            {messages.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center opacity-40 space-y-4">
+                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
+                        <MessageSquare size={32} strokeWidth={1} className="text-white"/>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-xs font-black uppercase tracking-widest text-white">SECURE CHANNEL ESTABLISHED</p>
+                        <p className="text-[10px] text-neutral-500 font-mono mt-1">Start transmission. E2EE Active.</p>
+                    </div>
+                </div>
+            )}
+            
             {messages.map((msg) => (
                 <MessageBubble key={msg.id} msg={msg} setViewImage={setViewImage} onBurn={handleDeleteMessage} />
             ))}
@@ -968,7 +989,7 @@ export const IStokView: React.FC = () => {
 
     if (mode === 'SELECT' || mode === 'HOST' || mode === 'JOIN') {
         return (
-            <div className="h-[100dvh] w-full bg-[#050505] flex flex-col items-center justify-center px-6 relative overflow-hidden font-sans">
+            <div className="h-[100dvh] w-full bg-[#050505] flex flex-col items-center justify-center relative overflow-hidden font-sans">
                  
                  {showResumeModal && resumeTargetSession && (
                      <ResumeSessionModal 
@@ -1021,15 +1042,17 @@ export const IStokView: React.FC = () => {
                     </button>
                 )}
 
+                {/* UNIFIED AUTH VIEW */}
                 {mode === 'SELECT' ? (
                     <IStokAuth 
                         identity={myProfile.username}
                         onRegenerateIdentity={() => setMyProfile({ ...myProfile, username: generateAnomalyIdentity() })}
                         onHost={() => {
-                            const newPin = Math.floor(100000 + Math.random()*900000).toString();
-                            setAccessPin(newPin);
-                            setMode('HOST');
-                            requestNotificationPermission();
+                             // This is now mainly for QR display, handled inside component state
+                             const newPin = Math.floor(100000 + Math.random()*900000).toString();
+                             setAccessPin(newPin);
+                             setMode('HOST'); // Or keep in SELECT but show QR modal? Let's use HOST mode for QR display
+                             requestNotificationPermission();
                         }}
                         onJoin={(id, pin) => {
                             setTargetPeerId(id);
@@ -1046,16 +1069,26 @@ export const IStokView: React.FC = () => {
                      <div className="w-full max-w-md bg-[#09090b] border border-white/10 p-8 rounded-[32px] text-center space-y-6">
                          <div className="relative inline-block mb-4">
                              <div className="absolute inset-0 bg-emerald-500 blur-[60px] opacity-20 animate-pulse"></div>
-                             <Server className="text-emerald-500 relative z-10 mx-auto" size={48} />
+                             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto text-emerald-500 border border-emerald-500/20">
+                                <QrCode size={40} />
+                             </div>
                          </div>
-                         <h2 className="text-xl font-black text-white animate-pulse">BROADCASTING...</h2>
-                         <div className="p-4 bg-black rounded-xl border border-white/5">
-                            <p className="text-[9px] text-neutral-500 mb-1">YOUR ID</p>
-                            <code className="text-emerald-500 text-xs select-all block mb-4 break-all">{myProfile.id}</code>
-                            <p className="text-[9px] text-neutral-500 mb-1">PIN</p>
-                            <p className="text-xl font-black text-white tracking-[0.5em]">{accessPin}</p>
+                         <h2 className="text-xl font-black text-white animate-pulse">BROADCASTING_ID</h2>
+                         
+                         <div className="p-4 bg-black rounded-xl border border-white/5 space-y-4">
+                            <div>
+                                <p className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider">YOUR SECURE ID</p>
+                                <code className="text-white text-xs select-all block break-all font-mono bg-white/5 p-2 rounded">{myProfile.id}</code>
+                            </div>
+                            <div>
+                                <p className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider">ACCESS PIN</p>
+                                <p className="text-2xl font-black text-emerald-500 tracking-[0.5em] font-mono">{accessPin}</p>
+                            </div>
                          </div>
-                         <button onClick={() => setShowShare(true)} className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all"><QrCode size={14} /> SHARE CONNECTION</button>
+                         
+                         <button onClick={() => setShowShare(true)} className="w-full py-3 rounded-xl bg-white text-black flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02]">
+                            <QrCode size={14} /> GENERATE QR LINK
+                         </button>
                      </div>
                 ) : (
                      <div className="w-full max-w-md space-y-4">

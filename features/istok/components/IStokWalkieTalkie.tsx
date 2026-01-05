@@ -196,8 +196,8 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
             {/* GRID BACKGROUND */}
             <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.05)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none"></div>
             
-            {/* HEADER */}
-            <div className="relative z-10 px-6 py-4 flex justify-between items-center border-b border-emerald-900/50 bg-black/80 backdrop-blur-md">
+            {/* HEADER with Safe Area */}
+            <div className="relative z-10 pt-safe px-6 pb-4 flex justify-between items-center border-b border-emerald-900/50 bg-black/80 backdrop-blur-md">
                 <div className="flex items-center gap-3">
                     <div className={`w-3 h-3 rounded-full ${status !== 'IDLE' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></div>
                     <span className="text-[10px] font-black uppercase tracking-[0.3em]">WALKIE_TALKIE</span>
@@ -208,12 +208,12 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
             </div>
 
             {/* MAIN DISPLAY */}
-            <div className="flex-1 relative flex flex-col items-center justify-center p-6 gap-8">
+            <div className="flex-1 relative flex flex-col items-center justify-center p-6 gap-8 pb-safe">
                 
-                {/* STATUS VISUALIZER */}
+                {/* STATUS VISUALIZER - Responsive Size */}
                 <div className="relative">
                     <div className={`
-                        w-64 h-64 rounded-full border-4 flex items-center justify-center transition-all duration-300
+                        w-48 h-48 md:w-64 md:h-64 rounded-full border-4 flex items-center justify-center transition-all duration-300
                         ${status === 'TX' ? 'border-red-500 bg-red-900/20 shadow-[0_0_50px_rgba(239,68,68,0.4)]' : 
                           status === 'RX' ? 'border-emerald-500 bg-emerald-900/20 shadow-[0_0_50px_rgba(16,185,129,0.4)]' : 
                           'border-neutral-800 bg-black'}
@@ -221,21 +221,21 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
                         {status === 'TX' && (
                             <div className="flex flex-col items-center animate-pulse">
                                 <Mic size={48} className="text-red-500 mb-2" />
-                                <span className="text-2xl font-black text-red-500 tracking-widest">TRANSMITTING</span>
+                                <span className="text-xl md:text-2xl font-black text-red-500 tracking-widest">TRANSMITTING</span>
                                 <span className="text-sm text-red-400 font-mono mt-2">{duration}s</span>
                             </div>
                         )}
                         {status === 'RX' && (
                             <div className="flex flex-col items-center animate-bounce">
                                 <Volume2 size={48} className="text-emerald-500 mb-2" />
-                                <span className="text-2xl font-black text-emerald-500 tracking-widest">RECEIVING</span>
+                                <span className="text-xl md:text-2xl font-black text-emerald-500 tracking-widest">RECEIVING</span>
                                 <span className="text-[10px] text-emerald-400 font-mono mt-2">INCOMING SIGNAL...</span>
                             </div>
                         )}
                         {status === 'IDLE' && (
                             <div className="flex flex-col items-center opacity-30">
                                 <Radio size={48} className="text-neutral-500 mb-2" />
-                                <span className="text-xl font-black text-neutral-500 tracking-widest">STANDBY</span>
+                                <span className="text-lg md:text-xl font-black text-neutral-500 tracking-widest">STANDBY</span>
                                 {audioQueue.length > 0 && <span className="text-[10px] text-amber-500 mt-2">{audioQueue.length} MSGS QUEUED</span>}
                             </div>
                         )}
