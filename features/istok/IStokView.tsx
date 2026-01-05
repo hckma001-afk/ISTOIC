@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
     encryptData, decryptData
@@ -23,6 +22,8 @@ import { AudioMessagePlayer, getSupportedMimeType } from './components/vn';
 import { compressImage, ImageMessage } from './components/gambar';
 import { IStokAuth } from './components/IStokAuth';
 import { IStokWalkieTalkie } from './components/IStokWalkieTalkie';
+import { RoomManager, Participant } from '../../services/roomManager'; // IMPORT ROOM MANAGER
+import { ParticipantList } from './components/ParticipantList'; // IMPORT PARTICIPANT LIST
 import { v4 as uuidv4 } from 'uuid';
 
 // --- CONSTANTS ---
@@ -30,10 +31,11 @@ const CHUNK_SIZE = 12 * 1024;
 const HEARTBEAT_INTERVAL = 3000; 
 const HEARTBEAT_TIMEOUT = 15000; 
 
-// --- TYPES (Previous Types remain) ---
+// --- TYPES ---
 interface Message {
     id: string;
-    sender: 'ME' | 'THEM';
+    sender: 'ME' | 'THEM'; // For UI logic
+    senderName?: string;   // Display name
     type: 'TEXT' | 'IMAGE' | 'AUDIO' | 'FILE';
     content: string; 
     timestamp: number;
@@ -133,6 +135,10 @@ const MessageBubble = React.memo(({ msg, setViewImage }: any) => {
     return (
         <div className={`flex ${msg.sender === 'ME' ? 'justify-end' : 'justify-start'} mb-2 animate-slide-up group`}>
             <div className={`max-w-[85%] flex flex-col ${msg.sender === 'ME' ? 'items-end' : 'items-start'}`}>
+                {/* Sender Name for Groups */}
+                {msg.sender !== 'ME' && msg.senderName && (
+                    <span className="text-[9px] font-bold text-neutral-500 mb-1 ml-2 uppercase tracking-wide">{msg.senderName}</span>
+                )}
                 <div className={`p-2 rounded-2xl text-sm border shadow-sm relative ${msg.sender === 'ME' ? 'bg-blue-600/20 border-blue-500/30 text-blue-100 rounded-tr-none' : 'bg-[#1a1a1a] text-neutral-200 border-white/10 rounded-tl-none'} ${msg.type === 'TEXT' ? 'px-4 py-2' : 'p-1'}`}>
                     {msg.type === 'IMAGE' ? 
                         <ImageMessage 
@@ -259,14 +265,11 @@ export const IStokView: React.FC = () => {
     
     // Core Refs
     const peerRef = useRef<any>(null);
-    const connRef = useRef<any>(null);
+    const roomRef = useRef<RoomManager | null>(null); // NEW: Room Manager Logic
     const pinRef = useRef(accessPin); 
     const isMounted = useRef(true);
     const msgEndRef = useRef<HTMLDivElement>(null);
-    const chunkBuffer = useRef<Record<string, { chunks: string[], count: number, total: number }>>({});
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const lastPongRef = useRef<number>(Date.now());
-    const heartbeatRef = useRef<any>(null);
     
     // Recording Refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -275,6 +278,7 @@ export const IStokView: React.FC = () => {
     
     // States
     const [messages, setMessages] = useState<Message[]>([]);
+    const [participants, setParticipants] = useState<Participant[]>([]); // New: Room Participants
     const [incomingConnectionRequest, setIncomingConnectionRequest] = useState<{ peerId: string, identity: string, conn: any } | null>(null);
     const [isPeerOnline, setIsPeerOnline] = useState(false);
     const [isPeerTyping, setIsPeerTyping] = useState(false);
@@ -284,6 +288,7 @@ export const IStokView: React.FC = () => {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const [showContactSidebar, setShowContactSidebar] = useState(false);
+    const [showParticipantList, setShowParticipantList] = useState(false); // New: Show member list
     const [showWalkieTalkie, setShowWalkieTalkie] = useState(false);
     const [viewImage, setViewImage] = useState<string | null>(null);
     const [latestAudioMessage, setLatestAudioMessage] = useState<Message | null>(null);
@@ -306,12 +311,60 @@ export const IStokView: React.FC = () => {
     // Sync Access Pin Ref
     useEffect(() => { pinRef.current = accessPin; }, [accessPin]);
 
-    // REQUEST NOTIFICATION PERMISSION ON MOUNT
+    // Initialize RoomManager on Component Mount
     useEffect(() => {
-        if ('Notification' in window && Notification.permission !== 'granted') {
-            Notification.requestPermission();
-        }
-    }, []);
+        // Callback to update Participants List
+        const handleParticipantsUpdate = (users: Participant[]) => {
+            setParticipants(users);
+            // If more than 1 user (me + other), we are online
+            setIsPeerOnline(users.length > 1); 
+        };
+
+        // Callback to handle incoming messages
+        const handleIncomingMessage = (payload: any) => {
+            // Process into UI format
+            if (Array.isArray(payload)) {
+                // Bulk Sync (History)
+                const formatted = payload.map(p => ({
+                    ...p,
+                    sender: p.senderId === myProfile.id ? 'ME' : 'THEM'
+                }));
+                setMessages(formatted);
+                setStoredMessages(formatted);
+            } else {
+                // Single Message
+                const msg: Message = {
+                    ...payload,
+                    sender: payload.senderId === myProfile.id ? 'ME' : 'THEM'
+                };
+                
+                // Audio special handling
+                if (msg.type === 'AUDIO') setLatestAudioMessage(msg);
+
+                setMessages(prev => {
+                    if (prev.some(m => m.id === msg.id)) return prev;
+                    return [...prev, msg];
+                });
+                
+                // Play sound if not from me
+                if (msg.sender !== 'ME') playSound('MSG_IN');
+                
+                // Update persistent storage
+                setStoredMessages(prev => [...prev, msg]);
+            }
+        };
+
+        roomRef.current = new RoomManager(
+            myProfile.id, 
+            myProfile.username, 
+            handleParticipantsUpdate, 
+            handleIncomingMessage
+        );
+
+        return () => {
+            if (roomRef.current) roomRef.current.leaveRoom();
+        };
+    }, [myProfile.id]);
 
     // ... (Service Worker Bridge, Focus Listener same) ...
 
@@ -334,42 +387,26 @@ export const IStokView: React.FC = () => {
 
     // --- ZOMBIE KILLER & HEARTBEAT ---
     const nukeConnection = () => {
-        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-        if (connRef.current) {
-            try { connRef.current.close(); } catch(e){}
-            connRef.current = null;
-        }
+        if (roomRef.current) roomRef.current.leaveRoom();
         setIsPeerOnline(false);
         setIsPeerTyping(false);
         setStage('IDLE');
-    };
-
-    const startHeartbeat = () => {
-        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-        lastPongRef.current = Date.now();
-        
-        heartbeatRef.current = setInterval(() => {
-            if (!connRef.current || !isPeerOnline) return;
-            
-            // Check lag
-            if (Date.now() - lastPongRef.current > HEARTBEAT_TIMEOUT) {
-                console.warn("[ISTOK_NET] Peer Timed Out - Triggering Soft Reconnect");
-                connRef.current.send({ type: 'PING' }); 
-            } else {
-                connRef.current.send({ type: 'PING' });
-            }
-        }, HEARTBEAT_INTERVAL);
+        setParticipants([]);
     };
 
     // --- CALL HANDLERS ---
     const initiateCall = () => {
-        if (connRef.current) {
-            // 1. Send Pre-Call Signal via Data Channel (Faster UI wake-up)
-            connRef.current.send({ type: 'CALL_SIGNAL' });
-            
-            // 2. Open Teleponan Interface
-            setOutgoingCallTarget(targetPeerId);
+        // Call logic needs specific target if in group, or broadcast?
+        // For now, let's keep it simple: Calls only work 1:1 if there's exactly 1 peer, 
+        // OR we pick from the participant list. 
+        // Current implementation: Auto-pick the first non-me peer or host.
+        
+        const target = participants.find(p => p.id !== myProfile.id);
+        if (target) {
+            setOutgoingCallTarget(target.id);
             setActiveTeleponan(true);
+        } else {
+            alert("Tidak ada user lain untuk ditelepon.");
         }
     };
 
@@ -385,8 +422,66 @@ export const IStokView: React.FC = () => {
         }
     };
 
+    // --- INITIALIZE PEERJS ---
+    useEffect(() => {
+        const initPeer = async () => {
+            const Peer = (await import('peerjs')).default;
+            const iceServers = await getIceServers();
+            
+            const peer = new Peer(myProfile.id, {
+                config: { iceServers },
+                debug: 1,
+                secure: true
+            });
+
+            peer.on('open', (id) => {
+                console.log('[ISTOK_NET] Peer Online:', id);
+            });
+
+            peer.on('connection', (conn) => {
+                // Delegate to Room Manager
+                if (roomRef.current) {
+                    roomRef.current.handleIncomingConnection(conn);
+                }
+            });
+
+            // Handle Incoming Call (Direct Media)
+            peer.on('call', (call) => {
+                console.log("[ISTOK_NET] Incoming Call...", call.peer);
+                // Simple auto-reject if busy
+                if (incomingMediaCallRef.current || activeTeleponan) {
+                    call.close();
+                    return;
+                }
+                setIncomingMediaCall(call);
+                playSound('CALL_RING');
+                triggerHaptic([500, 500, 500]);
+            });
+
+            peer.on('error', (err) => {
+                console.error("[ISTOK_NET] Fatal Error:", err);
+                if (err.type === 'peer-unavailable') {
+                    setErrorMsg("Target tidak ditemukan/offline.");
+                    setStage('IDLE');
+                } else if (err.type === 'network') {
+                    setIsRelayActive(true); 
+                }
+            });
+
+            peerRef.current = peer;
+        };
+
+        if (mode !== 'SELECT') {
+            initPeer();
+        }
+
+        return () => {
+            if (peerRef.current) peerRef.current.destroy();
+        };
+    }, [mode, myProfile.id]);
+
     // --- HANDSHAKE PROTOCOL ---
-    const joinSession = async (id?: string, pin?: string, attempt = 1) => {
+    const joinSession = async (id?: string, pin?: string) => {
         const target = id || targetPeerId;
         const key = pin || accessPin;
         if (!target || !key) {
@@ -394,312 +489,62 @@ export const IStokView: React.FC = () => {
             return;
         }
 
-        // Set local state before connection attempt
         setAccessPin(key);
         setTargetPeerId(target);
         pinRef.current = key;
 
-        if (connRef.current && connRef.current.peer === target && isPeerOnline) {
-             setMode('CHAT');
+        setStage('LOCATING_PEER');
+        
+        if (!peerRef.current) {
+             setErrorMsg("Network Initializing... Try again.");
              return;
         }
 
-        if (attempt === 1) nukeConnection();
-
-        if (!peerRef.current || peerRef.current.destroyed) {
-            setErrorMsg("NETWORK_OFFLINE");
-            return;
-        }
-
-        setStage('LOCATING_PEER');
-        
         try {
-            // Force Reliable True
             const conn = peerRef.current.connect(target, { 
                 reliable: true,
-                serialization: 'json',
-                metadata: { attempt }
+                serialization: 'json'
             });
-            connRef.current = conn;
 
-            // Robust Connection Timeout Backup (Increases with attempts)
-            const timeoutMs = 8000 + (attempt * 2000);
+            // Delegate to RoomManager
+            if (roomRef.current) {
+                roomRef.current.joinRoom(conn);
+            }
             
-            const connectionTimeout = setTimeout(() => {
-                if (stage !== 'SECURE' && stage !== 'AWAITING_APPROVAL') {
-                    console.warn(`Connection attempt ${attempt} timed out`);
-                    conn.close();
-                    
-                    if (attempt < 4) {
-                         setStage('RECONNECTING');
-                         setTimeout(() => joinSession(target, key, attempt + 1), 1000);
-                    } else {
-                         setErrorMsg("PEER_UNREACHABLE");
-                         setStage('IDLE');
-                    }
-                }
-            }, timeoutMs);
+            setMode('CHAT'); // Go to chat immediately, let RoomManager sync state
+            setStage('SECURE');
 
-            conn.on('open', () => {
-                clearTimeout(connectionTimeout);
-                console.log("[ISTOK_NET] Tunnel Open. Handshaking...");
-                setStage('HANDSHAKE_INIT');
-                
-                // Immediate Ping to punch NAT
-                conn.send({ type: 'PING' });
-                
-                setTimeout(async () => {
-                    setStage('VERIFYING_KEYS');
-                    const payload = JSON.stringify({ type: 'CONNECTION_REQUEST', identity: myProfile.username });
-                    const encrypted = await encryptData(payload, key);
-                    if (encrypted) {
-                        conn.send({ type: 'REQ', payload: encrypted });
-                        setStage('AWAITING_APPROVAL');
-                    } else {
-                        setErrorMsg("ENCRYPTION_FAILED");
-                    }
-                }, 800);
-            });
-
-            conn.on('data', (data: any) => handleData(data));
-            conn.on('close', () => {
-                clearTimeout(connectionTimeout);
-                handleDisconnect();
-            });
-            conn.on('error', (err: any) => {
-                clearTimeout(connectionTimeout);
-                console.error("Conn Error", err);
-                
-                // Retry Logic
-                if (attempt < 4) {
-                     setTimeout(() => joinSession(target, key, attempt + 1), 1500);
-                } else {
-                     setErrorMsg('CONNECTION_FAILED');
-                     setStage('IDLE');
-                }
-            });
-            
         } catch(e) {
             console.error("Join Exception", e);
             setErrorMsg('CONNECTION_ERROR');
         }
     };
 
-    const sendAck = async (msgId: string, status: 'DELIVERED' | 'READ') => {
-        if (!connRef.current) return;
-        const payload = JSON.stringify({
-            id: msgId,
-            status: status
-        });
-        const encrypted = await encryptData(payload, pinRef.current);
-        if (encrypted) {
-            connRef.current.send({ type: 'ACK', payload: encrypted });
+    const hostSession = () => {
+        if (roomRef.current) {
+            setTargetPeerId(''); // Clear target peer ID as we are hosting
+            roomRef.current.createRoom();
+            setMode('HOST');
         }
     };
-
-    const handleData = async (data: any, incomingConn?: any) => {
-        // ... (Processing logic remains same) ...
-
-        // Use current session key
-        const currentKey = pinRef.current;
-
-        // --- HANDSHAKE: REQUEST ---
-        if (data.type === 'REQ') {
-            const json = await decryptData(data.payload, currentKey);
-            if (json) {
-                const req = JSON.parse(json);
-                if (req.type === 'CONNECTION_REQUEST') {
-                    setShowShare(false);
-                    setIncomingConnectionRequest({ 
-                        peerId: incomingConn.peer, 
-                        identity: req.identity, 
-                        conn: incomingConn 
-                    });
-                    playSound('MSG_IN');
-                    triggerHaptic([100, 50, 100]);
-                    
-                    sendSystemNotification('CONNECTION REQUEST', `${req.identity} wants to connect.`, 'istok_req', { peerId: incomingConn.peer });
-                }
-            } else {
-                console.warn("[ISTOK_SEC] Decryption Failed for REQ. PIN Mismatch or Tampering.");
-            }
-        } 
-        
-        // --- HANDSHAKE: RESPONSE ---
-        else if (data.type === 'RESP') {
-            const json = await decryptData(data.payload, currentKey);
-            if (json) {
-                const res = JSON.parse(json);
-                if (res.type === 'CONNECTION_ACCEPT') {
-                    setStage('SECURE');
-                    setMode('CHAT');
-                    setIsPeerOnline(true);
-                    startHeartbeat();
-                    playSound('CONNECT');
-                    triggerHaptic(200);
-                    
-                    const now = Date.now();
-                    setSessions(prev => {
-                        const existing = prev.find(s => s.id === connRef.current.peer);
-                        if (existing) return prev.map(s => s.id === connRef.current.peer ? { ...s, lastSeen: now, status: 'ONLINE', name: res.identity } : s);
-                        return [...prev, {
-                            id: connRef.current.peer,
-                            name: res.identity,
-                            lastSeen: now,
-                            status: 'ONLINE',
-                            pin: currentKey,
-                            createdAt: now
-                        }];
-                    });
-                }
-            } else {
-                setErrorMsg("PIN MISMATCH: Unable to decrypt handshake.");
-                setStage('IDLE');
-                if (connRef.current) connRef.current.close();
-            }
-        } 
-        // ... (Other msg types) ...
-    };
-
-    const handleIncomingConnection = (conn: any) => {
-        console.log("[ISTOK_NET] Incoming connection from", conn.peer);
-        conn.on('data', (data: any) => handleData(data, conn));
-        conn.on('close', handleDisconnect);
-        conn.on('error', (err: any) => console.warn("Incoming Conn Error", err));
-    };
-
-    const handleDisconnect = () => {
-        setIsPeerOnline(false);
-        setIsPeerTyping(false);
-        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-        if (mode === 'CHAT') {
-            setStage('RECONNECTING');
-            setErrorMsg("PEER_DISCONNECTED");
-        }
-    };
-
-    // --- CONTACT DIALING ---
-    const handleCallContact = (contact: IStokContact) => {
-        // Prompt for PIN if not saved in session? 
-        // For simplicity in this P2P model, we assume a "Contact" implies we know the shared PIN 
-        // or we use a default if previously connected.
-        
-        // Find if we have a session for this contact to get the PIN
-        const session = sessions.find(s => s.id === contact.id);
-        const pinToUse = session?.pin || accessPin; // Fallback to current pin if none found
-
-        if (!pinToUse) {
-             // If no pin, maybe prompt user? For now, we just rely on last used.
-             alert("PIN Keamanan tidak ditemukan untuk kontak ini. Silakan masukkan PIN manual di menu Join.");
-             setTargetPeerId(contact.id);
-             setMode('JOIN');
-             return;
-        }
-
-        setAccessPin(pinToUse);
-        setTargetPeerId(contact.id);
-        setShowContactSidebar(false);
-        joinSession(contact.id, pinToUse);
-    };
-
-    // ... (Sidebar Handlers Updated) ...
-    const handleSelectSession = (s: IStokSession) => {
-        setAccessPin(s.pin);
-        setTargetPeerId(s.id);
-        setShowContactSidebar(false);
-        joinSession(s.id, s.pin);
-    };
-
-    const handleRenameSession = (id: string, newName: string) => {
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, customName: newName } : s));
-    };
-
-    const handleDeleteSession = (id: string) => {
-        setSessions(prev => prev.filter(s => s.id !== id));
-        if (targetPeerId === id) setMessages([]); 
-    };
-
-    // MISSING HELPER FUNCTIONS IMPLEMENTATION
 
     const acceptConnection = async () => {
-        const req = incomingConnectionRequest;
-        if (!req) return;
-
-        const currentKey = pinRef.current;
-        const responsePayload = JSON.stringify({
-            type: 'CONNECTION_ACCEPT',
-            identity: myProfile.username
-        });
-
-        const encrypted = await encryptData(responsePayload, currentKey);
-
-        if (encrypted && req.conn) {
-            req.conn.send({ type: 'RESP', payload: encrypted });
-
-            connRef.current = req.conn;
-            setTargetPeerId(req.peerId);
-            setAccessPin(currentKey);
-            setMode('CHAT');
-            setStage('SECURE');
-            setIsPeerOnline(true);
-
-            const now = Date.now();
-            setSessions(prev => {
-                const existing = prev.find(s => s.id === req.peerId);
-                const newSession: IStokSession = {
-                    id: req.peerId,
-                    name: req.identity,
-                    lastSeen: now,
-                    status: 'ONLINE',
-                    pin: currentKey,
-                    createdAt: existing ? existing.createdAt : now
-                };
-
-                if (existing) {
-                    return prev.map(s => s.id === req.peerId ? newSession : s);
-                }
-                return [...prev, newSession];
-            });
-
-            startHeartbeat();
-            setIncomingConnectionRequest(null);
-        } else {
-            console.error("Failed to encrypt Accept response");
-        }
+        // Handled internally by RoomManager now
+        setIncomingConnectionRequest(null);
     };
 
     const sendMessage = async (type: 'TEXT' | 'IMAGE' | 'AUDIO' | 'FILE', content: string, extra: any = {}) => {
-        const msg: Message = {
-            id: uuidv4(),
-            sender: 'ME',
-            type,
-            content,
-            timestamp: Date.now(),
-            status: 'PENDING',
-            ...extra
-        };
-
-        setMessages(prev => [...prev, msg]);
-        setStoredMessages(prev => [...prev, msg]);
-
-        if (connRef.current && isPeerOnline) {
-            const payload = JSON.stringify(msg);
-            const encrypted = await encryptData(payload, pinRef.current);
-
-            if (encrypted) {
-                connRef.current.send({ type: 'MSG', payload: encrypted });
-                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'SENT' } : m));
-                playSound('MSG_OUT');
-            } else {
-                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: 'ENCRYPTION_FAILED', type: 'TEXT' } : m));
-            }
-        }
+        if (!roomRef.current) return;
+        
+        roomRef.current.broadcastMessage(content, type);
+        playSound('MSG_OUT');
+        
+        // Auto-scroll logic handled in View
     };
 
     const handleTyping = (isTyping: boolean) => {
-        if (connRef.current) {
-            connRef.current.send({ type: isTyping ? 'TYPING_START' : 'TYPING_STOP' });
-        }
+        // Typing status via RoomManager not fully implemented to save bandwidth
+        // Could be added as ephemeral packet type
     };
 
     const startRecording = async () => {
@@ -777,6 +622,31 @@ export const IStokView: React.FC = () => {
         e.target.value = '';
     };
 
+    // --- CONTACT DIALING ---
+    const handleCallContact = (contact: IStokContact) => {
+        const session = sessions.find(s => s.id === contact.id);
+        const pinToUse = session?.pin || accessPin; 
+
+        if (!pinToUse) {
+             alert("PIN Keamanan tidak ditemukan untuk kontak ini. Silakan masukkan PIN manual di menu Join.");
+             setTargetPeerId(contact.id);
+             setMode('JOIN');
+             return;
+        }
+
+        setAccessPin(pinToUse);
+        setTargetPeerId(contact.id);
+        setShowContactSidebar(false);
+        joinSession(contact.id, pinToUse);
+    };
+
+    const handleSelectSession = (s: IStokSession) => {
+        setAccessPin(s.pin);
+        setTargetPeerId(s.id);
+        setShowContactSidebar(false);
+        joinSession(s.id, s.pin);
+    };
+    
     // --- RENDER MODES ---
 
     // 1. Full Screen Overlay for Calls (Titanium Integration)
@@ -822,22 +692,12 @@ export const IStokView: React.FC = () => {
                     sessions={sessions}
                     profile={myProfile}
                     onSelect={handleSelectSession}
-                    onCallContact={handleCallContact} // New Handler
-                    onRenameSession={handleRenameSession}
-                    onDeleteSession={handleDeleteSession}
+                    onCallContact={handleCallContact}
+                    onRenameSession={() => {}}
+                    onDeleteSession={(id) => setSessions(prev => prev.filter(s => s.id !== id))}
                     onRegenerateProfile={regenerateProfile}
                     currentPeerId={null}
                  />
-
-                 {/* Global Connection Request Overlay */}
-                 {incomingConnectionRequest && (
-                     <ConnectionNotification 
-                        identity={incomingConnectionRequest.identity}
-                        peerId={incomingConnectionRequest.peerId}
-                        onAccept={acceptConnection}
-                        onDecline={() => setIncomingConnectionRequest(null)}
-                     />
-                 )}
 
                  <div className="text-center space-y-4 z-10 animate-fade-in">
                      <h1 className="text-5xl font-black text-white italic tracking-tighter">IStoic <span className="text-emerald-500">P2P</span></h1>
@@ -846,7 +706,7 @@ export const IStokView: React.FC = () => {
 
                  <div className="grid grid-cols-1 gap-6 w-full max-w-sm z-10 animate-slide-up">
                     <button 
-                        onClick={() => { setAccessPin(Math.floor(100000 + Math.random()*900000).toString()); setMode('HOST'); }} 
+                        onClick={() => { setAccessPin(Math.floor(100000 + Math.random()*900000).toString()); hostSession(); }} 
                         className="p-6 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group"
                     >
                         <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 group-hover:scale-110 transition-transform"><Server size={24} /></div>
@@ -875,12 +735,9 @@ export const IStokView: React.FC = () => {
     if (mode === 'HOST' || mode === 'JOIN') {
         return (
             <div className="h-[100dvh] w-full bg-[#050505] flex flex-col items-center justify-center px-6 relative font-sans">
-                 {/* Global Connection Request Overlay */}
-                 {incomingConnectionRequest && <ConnectionNotification identity={incomingConnectionRequest.identity} peerId={incomingConnectionRequest.peerId} onAccept={acceptConnection} onDecline={() => setIncomingConnectionRequest(null)} />}
-                 
                  {showShare && <ShareConnection peerId={myProfile.id} pin={accessPin} onClose={() => setShowShare(false)} />}
 
-                 <button onClick={() => { setMode('SELECT'); setStage('IDLE'); }} className="absolute top-[calc(env(safe-area-inset-top)+1rem)] left-6 text-neutral-500 hover:text-white flex items-center gap-2 text-xs font-bold z-20">ABORT</button>
+                 <button onClick={() => { nukeConnection(); setMode('SELECT'); setStage('IDLE'); }} className="absolute top-[calc(env(safe-area-inset-top)+1rem)] left-6 text-neutral-500 hover:text-white flex items-center gap-2 text-xs font-bold z-20">ABORT</button>
                  
                  {mode === 'HOST' ? (
                      <div className="w-full max-w-md bg-[#09090b] border border-white/10 p-8 rounded-[32px] text-center space-y-6 animate-fade-in">
@@ -888,7 +745,7 @@ export const IStokView: React.FC = () => {
                              <div className="absolute inset-0 bg-emerald-500/20 blur-xl rounded-full animate-pulse"></div>
                              <Server className="text-emerald-500 mx-auto relative z-10" size={48} />
                          </div>
-                         <h2 className="text-xl font-black text-white uppercase tracking-wider">BROADCASTING_SIGNAL</h2>
+                         <h2 className="text-xl font-black text-white uppercase tracking-wider">ROOM_BROADCASTING</h2>
                          <div className="p-4 bg-black rounded-xl border border-white/5 space-y-4">
                             <div>
                                 <p className="text-[9px] text-neutral-500 mb-1 font-mono">YOUR ID</p>
@@ -899,7 +756,13 @@ export const IStokView: React.FC = () => {
                                 <p className="text-2xl font-black text-white tracking-[0.5em] font-mono">{accessPin}</p>
                             </div>
                          </div>
-                         <button onClick={() => setShowShare(true)} className="w-full py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"><QrCode size={14} /> SHARE CONNECTION</button>
+                         <div className="grid grid-cols-2 gap-3">
+                             <button onClick={() => setMode('CHAT')} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all">ENTER ROOM</button>
+                             <button onClick={() => setShowShare(true)} className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"><QrCode size={14} /> SHARE</button>
+                         </div>
+                         <div className="text-[9px] text-neutral-500 font-mono">
+                             {participants.length} USERS CONNECTED
+                         </div>
                      </div>
                  ) : (
                      <IStokAuth 
@@ -922,9 +785,6 @@ export const IStokView: React.FC = () => {
     return (
         <div className="h-[100dvh] w-full bg-[#050505] flex flex-col font-sans relative overflow-hidden">
              
-             {/* Global Connection Request Overlay (Even in chat, for multi-peer future proofing) */}
-             {incomingConnectionRequest && <ConnectionNotification identity={incomingConnectionRequest.identity} peerId={incomingConnectionRequest.peerId} onAccept={acceptConnection} onDecline={() => setIncomingConnectionRequest(null)} />}
-
              {showWalkieTalkie && (
                  <IStokWalkieTalkie 
                     onClose={() => setShowWalkieTalkie(false)} 
@@ -933,34 +793,41 @@ export const IStokView: React.FC = () => {
                  />
              )}
 
+             <ParticipantList 
+                isOpen={showParticipantList} 
+                onClose={() => setShowParticipantList(false)}
+                participants={participants.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    status: p.status === 'RECONNECTING' ? 'OFFLINE' : p.status,
+                    isHost: p.role === 'HOST'
+                }))}
+             />
+
              {/* Top Bar */}
              <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-[#09090b]/80 backdrop-blur-md z-10 pt-[calc(env(safe-area-inset-top)+1rem)]">
                  <div className="flex items-center gap-4">
                      <button onClick={() => { nukeConnection(); setMode('SELECT'); }} className="p-2 -ml-2 text-neutral-400 hover:text-white rounded-full hover:bg-white/5"><ArrowLeft size={20} /></button>
-                     <div>
+                     <div className="cursor-pointer" onClick={() => setShowParticipantList(true)}>
                          <div className="flex items-center gap-2">
                              <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_#10b981] ${isPeerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
                              <span className="text-xs font-bold text-white uppercase tracking-wider truncate max-w-[120px]">
-                                 {sessions.find(s=>s.id === targetPeerId)?.customName || sessions.find(s=>s.id === targetPeerId)?.name || 'UNKNOWN'}
+                                 {targetPeerId ? (sessions.find(s=>s.id === targetPeerId)?.name || 'ROOM_CHAT') : 'BROADCAST'}
                              </span>
                          </div>
-                         <p className="text-[8px] text-neutral-500 font-mono mt-0.5 animate-fade-in">
-                            {isPeerTyping ? 'MENGETIK...' : (isPeerOnline ? 'ONLINE' : 'OFFLINE')}
+                         <p className="text-[8px] text-neutral-500 font-mono mt-0.5 animate-fade-in flex items-center gap-1">
+                            <Users size={8} /> {participants.length} MEMBERS
                          </p>
                      </div>
                  </div>
                  <div className="flex gap-2">
-                     {isPeerOnline && (
-                         <button 
-                             onClick={initiateCall}
-                             className="p-2 text-emerald-500 hover:text-white bg-emerald-500/10 hover:bg-emerald-500 rounded-full transition-all active:scale-95"
-                         >
-                             <Phone size={18} fill="currentColor" />
-                         </button>
-                     )}
-                     <button onClick={() => { if(confirm("Clear Chat?")) { setMessages([]); setStoredMessages([]); } }} className="p-2 text-neutral-400 hover:text-red-500 rounded-full hover:bg-red-500/10"><Skull size={18} /></button>
+                     <button onClick={() => setShowShare(true)} className="p-2 text-neutral-400 hover:text-white rounded-full hover:bg-white/5"><QrCode size={18} /></button>
+                     <button onClick={initiateCall} className="p-2 text-emerald-500 hover:text-white bg-emerald-500/10 hover:bg-emerald-500 rounded-full transition-all active:scale-95"><Phone size={18} fill="currentColor" /></button>
                  </div>
              </div>
+
+             {/* Share Overlay */}
+             {showShare && <ShareConnection peerId={targetPeerId || myProfile.id} pin={accessPin} onClose={() => setShowShare(false)} />}
 
              {/* Message List */}
              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scroll bg-noise pb-4">
@@ -984,7 +851,7 @@ export const IStokView: React.FC = () => {
              {!isPeerOnline && stage !== 'IDLE' && (
                  <div className="absolute bottom-20 left-0 right-0 flex justify-center pointer-events-none">
                      <div className="bg-red-500/90 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 animate-pulse">
-                         <WifiOff size={12} /> CONNECTION_LOST
+                         <WifiOff size={12} /> WAITING_FOR_PEERS
                      </div>
                  </div>
              )}
@@ -992,7 +859,7 @@ export const IStokView: React.FC = () => {
              <IStokInput 
                 onSend={(t: string) => sendMessage('TEXT', t)} 
                 onTyping={(isTyping: boolean) => handleTyping(isTyping)} 
-                disabled={!isPeerOnline}
+                disabled={false} // Always allow typing in room
                 isRecording={isRecording}
                 recordingTime={recordingTime}
                 onStartRecord={startRecording}

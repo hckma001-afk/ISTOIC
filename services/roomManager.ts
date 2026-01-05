@@ -1,4 +1,3 @@
-
 import { DataConnection } from 'peerjs';
 import { v4 as uuidv4 } from 'uuid';
 import { debugService } from './debugService';
@@ -19,12 +18,14 @@ export type PacketType =
     | 'SYNC_RESP' 
     | 'MESSAGE' 
     | 'NOTE_UPDATE' 
-    | 'HEARTBEAT';
+    | 'HEARTBEAT'
+    | 'KICK'; // Fitur usir member
 
 export interface NetworkPacket {
     id: string;
     type: PacketType;
     senderId: string;
+    senderName?: string; // Menambahkan nama pengirim di paket
     payload: any;
     timestamp: number;
 }
@@ -56,6 +57,9 @@ export class RoomManager {
         this.participants.clear();
         debugService.log('INFO', 'ROOM', 'INIT', 'Room created. Waiting for peers...');
         
+        // Add self to participant list for UI consistency
+        this.notifyUI();
+        
         // Start Heartbeat Loop to maintain order
         setInterval(() => this.checkHeartbeats(), 5000);
     }
@@ -68,7 +72,7 @@ export class RoomManager {
             // Register preliminary participant
             this.participants.set(conn.peer, {
                 id: conn.peer,
-                name: 'Unknown', // Will be updated on Handshake
+                name: 'Unknown', 
                 role: 'CLIENT',
                 status: 'ONLINE',
                 lastPing: Date.now(),
@@ -81,6 +85,9 @@ export class RoomManager {
             
             // Send Welcome Handshake
             this.sendTo(conn.peer, 'HANDSHAKE', { hostName: this.myName });
+            
+            // Sync Current Participants to everyone (Update roster)
+            this.broadcastUserList();
         });
     }
 
@@ -110,6 +117,13 @@ export class RoomManager {
         });
     }
 
+    public leaveRoom() {
+        this.participants.forEach(p => p.conn.close());
+        this.participants.clear();
+        this.messageHistory = [];
+        this.notifyUI();
+    }
+
     // --- 3. THE "SMART" ROUTER (Packet Logic) ---
     private processPacket(packet: NetworkPacket, senderId: string) {
         // Update Heartbeat
@@ -117,9 +131,12 @@ export class RoomManager {
         if (participant) {
             participant.lastPing = Date.now();
             participant.status = 'ONLINE';
+            
+            // Update Name on Handshake
             if (packet.type === 'HANDSHAKE' && packet.payload.name) {
                 participant.name = packet.payload.name;
-                this.notifyUI(); // Update list name
+                // If I am host, broadcast this new name to everyone
+                if (this.role === 'HOST') this.broadcastUserList();
             }
         }
 
@@ -132,53 +149,74 @@ export class RoomManager {
                     // Host sends entire history to new joiner
                     this.sendTo(senderId, 'SYNC_RESP', { 
                         messages: this.messageHistory,
-                        users: Array.from(this.participants.values()).map(p => ({ id: p.id, name: p.name }))
+                        users: this.getPublicList()
                     });
                 }
                 break;
             case 'SYNC_RESP':
                 // Client updates their local state from host
-                this.messageHistory = packet.payload.messages;
-                this.onMessage(this.messageHistory); 
+                if (packet.payload.messages) {
+                    this.messageHistory = packet.payload.messages;
+                    this.onMessage(this.messageHistory); // Refresh UI Messages
+                }
+                // Sync User List
+                if (packet.payload.users) {
+                     // We don't overwrite the connection map, just the UI list visualization
+                     // In a full implementation, we'd sync this better, but for now we trust the host.
+                     this.onStateUpdate(packet.payload.users);
+                }
+                break;
+            case 'NOTE_UPDATE':
+                // Feature for collaborative notes (future)
                 break;
         }
     }
 
     private handleMessagePacket(packet: NetworkPacket) {
-        // 1. Save to local history
-        this.messageHistory.push(packet.payload);
-        this.onMessage(packet.payload); // Update UI
+        // 1. Check if we already have this message (Deduplication)
+        if (this.messageHistory.some(m => m.id === packet.id)) return;
 
-        // 2. IF HOST: Broadcast to everyone else (The Star Topology Logic)
+        // 2. Save to local history
+        this.messageHistory.push(packet.payload);
+        this.onMessage(packet.payload); // Update UI (Add single message)
+
+        // 3. IF HOST: RELAY (Forward) to everyone else
+        // This is the Key to Multi-User Chat!
         if (this.role === 'HOST') {
-            this.broadcast(packet, packet.senderId); // Don't send back to sender
+            this.broadcast(packet, packet.senderId); 
         }
     }
 
     // --- 4. DATA TRANSMISSION ---
     
-    public broadcastMessage(content: string, type: 'TEXT' | 'IMAGE' | 'AUDIO') {
+    public broadcastMessage(content: string, type: 'TEXT' | 'IMAGE' | 'AUDIO' | 'FILE') {
         const msgPayload = {
             id: uuidv4(),
             senderId: this.myId,
             senderName: this.myName,
             content,
             type,
+            timestamp: Date.now(),
+            status: 'SENT'
+        };
+
+        // Create packet
+        const packet: NetworkPacket = {
+            id: msgPayload.id,
+            type: 'MESSAGE',
+            senderId: this.myId,
+            senderName: this.myName,
+            payload: msgPayload,
             timestamp: Date.now()
         };
 
-        // Add to own UI
-        this.handleMessagePacket({
-            id: uuidv4(),
-            type: 'MESSAGE',
-            senderId: this.myId,
-            payload: msgPayload,
-            timestamp: Date.now()
-        });
+        // Add to own UI immediately
+        this.messageHistory.push(msgPayload);
+        this.onMessage(msgPayload); 
 
         // Send out
         if (this.role === 'HOST') {
-            this.broadcast({ id: uuidv4(), type: 'MESSAGE', senderId: this.myId, payload: msgPayload, timestamp: Date.now() });
+            this.broadcast(packet, this.myId);
         } else {
             // Client sends to Host only
             const host = Array.from(this.participants.values()).find(p => p.role === 'HOST');
@@ -195,6 +233,7 @@ export class RoomManager {
                 id: uuidv4(),
                 type,
                 senderId: this.myId,
+                senderName: this.myName,
                 payload,
                 timestamp: Date.now()
             };
@@ -204,21 +243,45 @@ export class RoomManager {
 
     private broadcast(packet: NetworkPacket, excludeId?: string) {
         this.participants.forEach(p => {
-            if (p.id !== excludeId && p.status === 'ONLINE') {
+            if (p.id !== excludeId && p.status === 'ONLINE' && p.conn.open) {
                 p.conn.send(packet);
             }
         });
     }
 
+    private broadcastUserList() {
+        if (this.role !== 'HOST') return;
+        const userList = this.getPublicList();
+        
+        // Send SYNC_RESP with just users to everyone
+        this.broadcast({
+            id: uuidv4(),
+            type: 'SYNC_RESP',
+            senderId: this.myId,
+            payload: { users: userList },
+            timestamp: Date.now()
+        });
+        
+        this.notifyUI();
+    }
+
     // --- 5. MAINTENANCE & CLEANUP ---
     private checkHeartbeats() {
         const now = Date.now();
+        let changed = false;
+        
         this.participants.forEach(p => {
-            if (now - p.lastPing > 15000) { // 15s timeout
+            // Ping logic could be added here
+            if (now - p.lastPing > 15000 && p.status !== 'OFFLINE') { // 15s timeout
                 p.status = 'OFFLINE';
-                this.notifyUI();
+                changed = true;
             }
         });
+        
+        if (changed) {
+            this.notifyUI();
+            if (this.role === 'HOST') this.broadcastUserList();
+        }
     }
 
     private handleDisconnect(peerId: string) {
@@ -226,19 +289,23 @@ export class RoomManager {
         if (p) {
             p.status = 'OFFLINE';
             this.notifyUI();
+            if (this.role === 'HOST') this.broadcastUserList();
         }
     }
 
-    private notifyUI() {
-        // Send simplified participant list to UI
+    private getPublicList() {
         const users = Array.from(this.participants.values()).map(p => ({
             id: p.id,
             name: p.name,
             status: p.status,
             isHost: p.role === 'HOST'
         }));
-        users.unshift({ id: this.myId, name: `${this.myName} (YOU)`, status: 'ONLINE', isHost: this.role === 'HOST' });
-        
-        this.onStateUpdate(users);
+        // Add self
+        users.unshift({ id: this.myId, name: this.myName, status: 'ONLINE', isHost: this.role === 'HOST' });
+        return users;
+    }
+
+    private notifyUI() {
+        this.onStateUpdate(this.getPublicList());
     }
 }
