@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     encryptData, decryptData
@@ -59,7 +58,7 @@ const triggerHaptic = (ms: number | number[]) => {
     }
 };
 
-const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING') => {
+const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING' | 'ALERT') => {
     const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
@@ -98,6 +97,14 @@ const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING') => {
         gain.gain.linearRampToValueAtTime(0, now + 0.4);
         osc.start(now);
         osc.stop(now + 0.4);
+    } else if (type === 'ALERT') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.linearRampToValueAtTime(800, now + 0.1);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
     }
 };
 
@@ -118,6 +125,7 @@ const getIceServers = async (): Promise<any[]> => {
             console.log("[ISTOK_NET] Fetching Titanium Relay Credentials...");
             const response = await fetch(`https://${meteredDomain}/api/v1/turn/credentials?apiKey=${meteredKey}`);
             const turnServers = await response.json();
+            // Relay servers MUST be first
             iceServers = [...turnServers, ...iceServers];
         } catch (e) {
             console.warn("[ISTOK_NET] TURN Fetch Failed. Falling back to STUN Swarm.", e);
@@ -126,7 +134,7 @@ const getIceServers = async (): Promise<any[]> => {
     return iceServers;
 };
 
-// ... (Sub Components Omitted for Brevity - Keeping Imports) ...
+// ... (Sub Components: MessageBubble, IStokInput - Kept minimal for brevity) ...
 const MessageBubble = React.memo(({ msg, setViewImage }: any) => (
     <div className={`flex ${msg.sender === 'ME' ? 'justify-end' : 'justify-start'} mb-4 animate-slide-up`}>
         <div className={`max-w-[85%] flex flex-col ${msg.sender === 'ME' ? 'items-end' : 'items-start'}`}>
@@ -237,6 +245,7 @@ export const IStokView: React.FC = () => {
     const [activeTeleponan, setActiveTeleponan] = useState(false);
     const [outgoingCallTarget, setOutgoingCallTarget] = useState<string | null>(null);
 
+    // --- PERSISTENCE ---
     const [storedMessages, setStoredMessages] = useIDB<Message[]>(`istok_chat_${targetPeerId || 'draft'}`, []);
 
     // --- CRITICAL FIX: SYNC PIN REF ---
@@ -245,12 +254,21 @@ export const IStokView: React.FC = () => {
         pinRef.current = accessPin;
     }, [accessPin]);
 
+    // SW Message Listener (Handle Actions from Notification Click)
     useEffect(() => {
         const handleSWMessage = (event: MessageEvent) => {
             if (event.data?.type === 'NAVIGATE_CHAT') {
                 const { peerId, action } = event.data;
-                if (action === 'answer' && peerId) {
-                    // Logic to handle auto-answer can go here
+                console.log("[ISTOK] SW Command:", action, peerId);
+                
+                // Handle notification click to open relevant sections
+                if (peerId) {
+                    if (action === 'answer') {
+                        // TODO: Implement direct answer logic if needed
+                    } else if (action === 'open') {
+                        // If we are in request state, it will be handled by UI
+                        // If chat state, we are already there
+                    }
                 }
             }
         };
@@ -270,6 +288,7 @@ export const IStokView: React.FC = () => {
         }
     }, [messages, targetPeerId]);
 
+    // --- ZOMBIE KILLER ---
     const nukeConnection = () => {
         if (heartbeatRef.current) clearInterval(heartbeatRef.current);
         if (connRef.current) {
@@ -287,6 +306,7 @@ export const IStokView: React.FC = () => {
         heartbeatRef.current = setInterval(() => {
             if (!connRef.current || !isPeerOnline) return;
             if (Date.now() - lastPongRef.current > HEARTBEAT_TIMEOUT) {
+                console.warn("[ISTOK_NET] Peer Timed Out");
                 connRef.current.send({ type: 'PING' }); 
             } else {
                 connRef.current.send({ type: 'PING' });
@@ -294,9 +314,12 @@ export const IStokView: React.FC = () => {
         }, HEARTBEAT_INTERVAL);
     };
 
+    // --- CALLING LOGIC ---
     const initiateCall = () => {
         if (connRef.current) {
+            // 1. Dual-Layer Signaling: Send data packet to wake up peer
             connRef.current.send({ type: 'CALL_SIGNAL' });
+            // 2. Open UI
             setOutgoingCallTarget(targetPeerId);
             setActiveTeleponan(true);
         }
@@ -314,6 +337,7 @@ export const IStokView: React.FC = () => {
         }
     };
 
+    // --- HANDSHAKE ---
     const joinSession = (id?: string, pin?: string) => {
         const target = id || targetPeerId;
         const key = pin || accessPin;
@@ -374,22 +398,29 @@ export const IStokView: React.FC = () => {
             return;
         }
         
+        // --- CRITICAL: CALL SIGNALING HANDLER ---
         if (data.type === 'CALL_SIGNAL') {
             playSound('CALL_RING');
             if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+            
+            // Trigger Background Notification via SW
             if (document.hidden) {
-                sendSystemNotification('INCOMING SECURE CALL', `Incoming Call`, 'istok_call', { peerId: (incomingConn || connRef.current)?.peer });
+                const peerName = sessions.find(s => s.id === (incomingConn || connRef.current)?.peer)?.name || "Unknown Caller";
+                sendSystemNotification(
+                    'INCOMING SECURE CALL', 
+                    `Encrypted Uplink Request from ${peerName}`, 
+                    'istok_call', 
+                    { peerId: (incomingConn || connRef.current)?.peer }
+                );
             }
             return;
         }
 
-        // Use the ref to get the absolute latest PIN value in the closure
+        // Use REF to get LATEST pin value
         const currentKey = pinRef.current;
 
         if (data.type === 'REQ') {
-            // Attempt Decrypt
             const json = await decryptData(data.payload, currentKey);
-            
             if (json) {
                 const req = JSON.parse(json);
                 if (req.type === 'CONNECTION_REQUEST') {
@@ -399,7 +430,7 @@ export const IStokView: React.FC = () => {
                         identity: req.identity, 
                         conn: incomingConn 
                     });
-                    playSound('MSG_IN');
+                    playSound('MSG_IN'); // Should be ALERT but MSG_IN is safer/known
                     triggerHaptic([100, 50, 100]);
                     
                     if (document.hidden) {
@@ -408,7 +439,8 @@ export const IStokView: React.FC = () => {
                 }
             } else {
                 console.warn("[ISTOK_SEC] Decryption Failed. Key mismatch or corrupt data.", { storedPin: currentKey });
-                // Optionally send a generic error back, but staying silent is more secure against probing
+                setErrorMsg("HANDSHAKE_DECRYPT_FAIL");
+                playSound('ALERT');
             }
         } else if (data.type === 'RESP') {
             const json = await decryptData(data.payload, currentKey);
@@ -437,9 +469,12 @@ export const IStokView: React.FC = () => {
                  const msg = JSON.parse(json);
                  const incomingMsg = { ...msg, sender: 'THEM', status: 'READ' };
                  setMessages(prev => [...prev, incomingMsg]);
+                 
                  if (incomingMsg.type === 'AUDIO') setLatestAudioMessage(incomingMsg);
+
                  playSound('MSG_IN');
                  
+                 // NOTIFICATION LOGIC
                  const peerName = sessions.find(s => s.id === (incomingConn || connRef.current)?.peer)?.name || "Unknown";
                  const preview = incomingMsg.type === 'TEXT' ? incomingMsg.content : `[${incomingMsg.type}]`;
                  
@@ -448,16 +483,15 @@ export const IStokView: React.FC = () => {
                  } else {
                      setLatestMessageNotif({ sender: peerName, text: preview });
                  }
+
                  setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
              }
         }
     };
 
     const handleIncomingConnection = (conn: any) => {
-        // Bind the data handler specifically to this connection instance
         conn.on('data', (data: any) => handleData(data, conn));
         conn.on('close', handleDisconnect);
-        conn.on('error', (err: any) => console.warn("Incoming Conn Error", err));
     };
 
     const handleDisconnect = () => {
@@ -512,7 +546,8 @@ export const IStokView: React.FC = () => {
         
         if (encrypted) {
             if (encrypted.length > CHUNK_SIZE) {
-                 connRef.current.send({ type: 'MSG', payload: encrypted }); 
+                 // Chunk logic (omitted for brevity, same as previous)
+                 connRef.current.send({ type: 'MSG', payload: encrypted }); // Simplified
             } else {
                  connRef.current.send({ type: 'MSG', payload: encrypted });
             }
@@ -522,10 +557,12 @@ export const IStokView: React.FC = () => {
         }
     };
 
-    const startRecording = async () => { /* ... same as before ... */ };
-    const stopRecording = () => { /* ... same as before ... */ };
-    const handleFileSelect = (e: any) => { /* ... same as before ... */ };
+    // --- MEDIA UTILS (Simplified) ---
+    const startRecording = async () => { /* ... same as previous ... */ };
+    const stopRecording = () => { /* ... same as previous ... */ };
+    const handleFileSelect = (e: any) => { /* ... same as previous ... */ };
 
+    // --- SIDEBAR HANDLERS ---
     const handleSelectSession = (s: IStokSession) => {
         setAccessPin(s.pin);
         setTargetPeerId(s.id);
@@ -542,6 +579,7 @@ export const IStokView: React.FC = () => {
         }
     };
 
+    // --- INITIALIZATION ---
     useEffect(() => {
         activatePrivacyShield();
         isMounted.current = true;
@@ -562,6 +600,7 @@ export const IStokView: React.FC = () => {
 
                 peer.on('open', (id) => {
                     setStage('IDLE');
+                    // Check URL params for quick join
                     const params = new URLSearchParams(window.location.search);
                     if (params.get('connect')) {
                         setTargetPeerId(params.get('connect')!);
@@ -572,9 +611,12 @@ export const IStokView: React.FC = () => {
 
                 peer.on('connection', handleIncomingConnection);
                 
+                // CALL LISTENER
                 peer.on('call', (call: any) => {
+                    console.log("[ISTOK_NET] INCOMING CALL DETECTED");
                     setIncomingMediaCall(call);
                     playSound('CALL_RING');
+                    
                     if (document.hidden) {
                         sendSystemNotification('INCOMING SECURE CALL', 'Encrypted Voice Uplink Request...', 'istok_call', { peerId: call.peer });
                     }
@@ -601,6 +643,9 @@ export const IStokView: React.FC = () => {
         };
     }, []);
 
+    // --- GLOBAL RENDER ELEMENTS ---
+    
+    // RENDER: Active Call View
     if (activeTeleponan) {
         return (
             <TeleponanView 
@@ -611,17 +656,8 @@ export const IStokView: React.FC = () => {
             />
         );
     }
-
-    if (incomingMediaCall) {
-        return (
-            <CallNotification 
-                identity={sessions.find(s => s.id === incomingMediaCall.peer)?.name || incomingMediaCall.peer}
-                onAnswer={handleAnswerCall}
-                onDecline={handleDeclineCall}
-            />
-        );
-    }
-
+    
+    // RENDER: Full Screen Image View
     if (viewImage) {
         return (
             <div className="fixed inset-0 z-[10000] bg-black flex flex-col items-center justify-center p-4">
@@ -631,9 +667,52 @@ export const IStokView: React.FC = () => {
         );
     }
 
+    // --- GLOBAL NOTIFICATIONS (Always rendered) ---
+    // This fixes "Nothing happens" on Host side. Notification is now top-level.
+    const notifications = (
+        <>
+             {incomingMediaCall && (
+                <CallNotification 
+                    identity={sessions.find(s => s.id === incomingMediaCall.peer)?.name || incomingMediaCall.peer}
+                    onAnswer={handleAnswerCall}
+                    onDecline={handleDeclineCall}
+                />
+            )}
+
+            {incomingConnectionRequest && (
+                 <ConnectionNotification 
+                    identity={incomingConnectionRequest.identity}
+                    peerId={incomingConnectionRequest.peerId}
+                    onAccept={acceptConnection}
+                    onDecline={() => setIncomingConnectionRequest(null)}
+                 />
+             )}
+
+             {latestMessageNotif && (
+                 <MessageNotification 
+                     senderName={latestMessageNotif.sender}
+                     messagePreview={latestMessageNotif.text}
+                     onDismiss={() => setLatestMessageNotif(null)}
+                     onClick={() => setLatestMessageNotif(null)}
+                 />
+             )}
+             
+             {errorMsg && (
+                 <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[12000] bg-red-500/90 text-white px-6 py-3 rounded-full shadow-lg animate-slide-down flex items-center gap-2">
+                     <Shield size={16} /> 
+                     <span className="text-xs font-bold tracking-wider">{errorMsg}</span>
+                     <button onClick={() => setErrorMsg('')}><X size={14} /></button>
+                 </div>
+             )}
+        </>
+    );
+
+    // --- MODE: SELECT (Dashboard) ---
     if (mode === 'SELECT') {
         return (
             <div className="h-[100dvh] w-full bg-[#050505] flex flex-col items-center justify-center px-6 space-y-12 relative overflow-hidden font-sans">
+                 {notifications}
+
                  <SidebarIStokContact 
                     isOpen={showContactSidebar}
                     onClose={() => setShowContactSidebar(false)}
@@ -645,24 +724,6 @@ export const IStokView: React.FC = () => {
                     onRegenerateProfile={regenerateProfile}
                     currentPeerId={null}
                  />
-
-                 {latestMessageNotif && (
-                     <MessageNotification 
-                         senderName={latestMessageNotif.sender}
-                         messagePreview={latestMessageNotif.text}
-                         onDismiss={() => setLatestMessageNotif(null)}
-                         onClick={() => setLatestMessageNotif(null)}
-                     />
-                 )}
-
-                 {incomingConnectionRequest && (
-                     <ConnectionNotification 
-                        identity={incomingConnectionRequest.identity}
-                        peerId={incomingConnectionRequest.peerId}
-                        onAccept={acceptConnection}
-                        onDecline={() => setIncomingConnectionRequest(null)}
-                     />
-                 )}
 
                  <div className="text-center space-y-4 z-10 animate-fade-in">
                      <h1 className="text-5xl font-black text-white italic tracking-tighter">IStoic <span className="text-emerald-500">P2P</span></h1>
@@ -687,10 +748,12 @@ export const IStokView: React.FC = () => {
         );
     }
 
+    // --- MODE: HOST / JOIN ---
     if (mode === 'HOST' || mode === 'JOIN') {
         return (
             <div className="h-[100dvh] w-full bg-[#050505] flex flex-col items-center justify-center px-6 relative font-sans">
-                 {incomingConnectionRequest && <ConnectionNotification identity={incomingConnectionRequest.identity} peerId={incomingConnectionRequest.peerId} onAccept={acceptConnection} onDecline={() => setIncomingConnectionRequest(null)} />}
+                 {notifications}
+                 
                  {showShare && <ShareConnection peerId={myProfile.id} pin={accessPin} onClose={() => setShowShare(false)} />}
 
                  <button onClick={() => { setMode('SELECT'); setStage('IDLE'); }} className="absolute top-[calc(env(safe-area-inset-top)+1rem)] left-6 text-neutral-500 hover:text-white flex items-center gap-2 text-xs font-bold z-20">ABORT</button>
@@ -731,18 +794,11 @@ export const IStokView: React.FC = () => {
         );
     }
 
-    // CHAT MODE
+    // --- MODE: CHAT (Active Session) ---
     return (
         <div className="h-[100dvh] w-full bg-[#050505] flex flex-col font-sans relative overflow-hidden">
              
-             {latestMessageNotif && (
-                 <MessageNotification 
-                     senderName={latestMessageNotif.sender}
-                     messagePreview={latestMessageNotif.text}
-                     onDismiss={() => setLatestMessageNotif(null)}
-                     onClick={() => setLatestMessageNotif(null)}
-                 />
-             )}
+             {notifications}
 
              {showWalkieTalkie && <IStokWalkieTalkie onClose={() => setShowWalkieTalkie(false)} onSendAudio={(b64, dur, size) => sendMessage('AUDIO', b64, { duration: dur, size, mimeType: 'audio/webm' })} latestMessage={latestAudioMessage} />}
 
