@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
     encryptData, decryptData
@@ -10,10 +11,10 @@ import {
     Mic, MicOff, Square,
     Menu, Skull, Activity,
     PhoneCall, QrCode, User, Shield, AlertTriangle, History, ArrowRight,
-    X, RefreshCw, Lock, Flame, ShieldAlert, Image as ImageIcon, Loader2, ArrowLeft, Wifi, WifiOff, UploadCloud, Users, Radio as RadioIcon
+    X, RefreshCw, Lock, Flame, ShieldAlert, Image as ImageIcon, Loader2, ArrowLeft, Wifi, WifiOff, UploadCloud, Users, Radio as RadioIcon, Globe
 } from 'lucide-react';
 import useLocalStorage from '../../hooks/useLocalStorage';
-import { useIDB } from '../../hooks/useIDB'; // Added for persistence
+import { useIDB } from '../../hooks/useIDB'; 
 import { SidebarIStokContact, IStokSession, IStokProfile } from './components/SidebarIStokContact';
 import { ShareConnection } from './components/ShareConnection'; 
 import { ConnectionNotification } from './components/ConnectionNotification';
@@ -27,8 +28,8 @@ import { MediaDrawer } from './components/MediaDrawer';
 
 // --- CONSTANTS ---
 const CHUNK_SIZE = 16384; 
-const HEARTBEAT_INTERVAL = 5000; // 5 Seconds
-const HEARTBEAT_TIMEOUT = 15000; // 15 Seconds tolerance
+const HEARTBEAT_INTERVAL = 2000; // Aggressive Heartbeat (2s) for Mobile Networks
+const HEARTBEAT_TIMEOUT = 10000; // 10 Seconds tolerance
 
 // --- TYPES ---
 interface Message {
@@ -94,23 +95,38 @@ const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING' | 'ERROR
     }
 };
 
+// --- AGGRESSIVE ICE CONFIGURATION ---
+// Ensures connection penetration through symmetric NATs and mobile carrier firewalls
 const getIceServers = async (): Promise<any[]> => {
     const meteredKey = process.env.VITE_METERED_API_KEY;
     const meteredDomain = process.env.VITE_METERED_DOMAIN || 'istok.metered.live';
 
+    let iceServers = [
+        // GLOBAL PUBLIC STUN LIST (Redundancy Strategy)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'stun:stun.stunprotocol.org:3478' },
+        { urls: 'stun:stun.framasoft.org:3478' },
+        { urls: 'stun:stun.voip.blackberry.com:3478' }
+    ];
+
+    // IF METERED KEY EXISTS (TITANIUM TIER - TURN RELAY)
+    // This is required for 100% guarantee on strict corporate/mobile networks
     if (meteredKey) {
         try {
+            console.log("[ISTOK_NET] Fetching Titanium Relay Credentials...");
             const response = await fetch(`https://${meteredDomain}/api/v1/turn/credentials?apiKey=${meteredKey}`);
-            const iceServers = await response.json();
-            return iceServers;
+            const turnServers = await response.json();
+            // Prepend TURN servers for priority
+            iceServers = [...turnServers, ...iceServers];
         } catch (e) {
-            console.warn("[ISTOK_NET] Failed to fetch TURN servers, falling back to STUN.", e);
+            console.warn("[ISTOK_NET] TURN Fetch Failed. Falling back to STUN Swarm.", e);
         }
     }
-    return [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-    ];
+
+    return iceServers;
 };
 
 // ... Sub Components ...
@@ -238,10 +254,8 @@ export const IStokView: React.FC = () => {
     const [latestAudioMessage, setLatestAudioMessage] = useState<Message | null>(null);
 
     // --- PERSISTENCE: LOAD CHAT HISTORY ---
-    // Using IDB key: `istok_chat_${targetPeerId}`
     const [storedMessages, setStoredMessages] = useIDB<Message[]>(`istok_chat_${targetPeerId || 'draft'}`, []);
 
-    // Sync state <-> IDB
     useEffect(() => {
         if (targetPeerId && storedMessages.length > 0 && messages.length === 0) {
             setMessages(storedMessages);
@@ -291,9 +305,9 @@ export const IStokView: React.FC = () => {
             
             // Check lag
             if (Date.now() - lastPongRef.current > HEARTBEAT_TIMEOUT) {
-                console.warn("[ISTOK_NET] Peer Timed Out");
-                setIsPeerOnline(false);
-                setErrorMsg("CONNECTION_LOST");
+                console.warn("[ISTOK_NET] Peer Timed Out - Triggering Soft Reconnect");
+                // Don't kill fully, try to ping aggressively or show weak signal
+                connRef.current.send({ type: 'PING' }); 
             } else {
                 connRef.current.send({ type: 'PING' });
             }
@@ -309,6 +323,12 @@ export const IStokView: React.FC = () => {
         if (pin) pinRef.current = pin;
         setAccessPin(key);
 
+        // Don't nuke if we are just re-trying logic on same peer
+        if (connRef.current && connRef.current.peer === target && isPeerOnline) {
+             console.log("Already connected to target.");
+             return;
+        }
+
         nukeConnection();
 
         if (!peerRef.current || peerRef.current.destroyed) {
@@ -319,15 +339,19 @@ export const IStokView: React.FC = () => {
         setStage('LOCATING_PEER');
         
         try {
-            const conn = peerRef.current.connect(target, { reliable: true });
+            const conn = peerRef.current.connect(target, { 
+                reliable: true,
+                serialization: 'json'
+            });
             connRef.current = conn;
 
             conn.on('open', () => {
                 console.log("[ISTOK_NET] Tunnel Open. Handshaking...");
                 setStage('HANDSHAKE_INIT');
-                // Immediate Ping
+                // Immediate Ping to punch NAT
                 conn.send({ type: 'PING' });
                 
+                // Add delay to allow ICE to settle before heavy encryption handshake
                 setTimeout(async () => {
                     setStage('VERIFYING_KEYS');
                     const payload = JSON.stringify({ type: 'CONNECTION_REQUEST', identity: myProfile.username });
@@ -336,19 +360,28 @@ export const IStokView: React.FC = () => {
                         conn.send({ type: 'REQ', payload: encrypted });
                         setStage('AWAITING_APPROVAL');
                     }
-                }, 300);
+                }, 500);
             });
 
             conn.on('data', (data: any) => handleData(data));
             conn.on('close', () => {
                 handleDisconnect();
-                // If closed, clear messages from state but they remain in IDB
             });
             conn.on('error', (err: any) => {
                 console.error("Conn Error", err);
                 setErrorMsg('CONNECTION_FAILED');
                 setStage('IDLE');
             });
+            
+            // Monitor ICE State for Debugging
+            if (conn.peerConnection) {
+                conn.peerConnection.oniceconnectionstatechange = () => {
+                    console.log(`[ICE STATE] ${conn.peerConnection.iceConnectionState}`);
+                    if (conn.peerConnection.iceConnectionState === 'failed') {
+                         setErrorMsg("NAT_TRAVERSAL_FAIL");
+                    }
+                };
+            }
 
         } catch(e) {
             console.error("Join Exception", e);
@@ -643,8 +676,12 @@ export const IStokView: React.FC = () => {
                 
                 const { Peer } = await import('peerjs');
                 const peer = new Peer(myProfile.id, { 
-                    debug: 1, 
-                    config: { iceServers, sdpSemantics: 'unified-plan' } 
+                    debug: 2, // Info Level
+                    config: { 
+                        iceServers, 
+                        sdpSemantics: 'unified-plan',
+                        iceCandidatePoolSize: 10 // Pre-fetch candidates for speed
+                    } 
                 });
 
                 peer.on('open', (id) => {
@@ -658,7 +695,6 @@ export const IStokView: React.FC = () => {
                         setTargetPeerId(connectId);
                         setAccessPin(key);
                         setTimeout(() => joinSession(connectId, key), 500);
-                        // Clean URL without reload
                         window.history.replaceState({}, '', window.location.pathname);
                     }
                 });
