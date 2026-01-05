@@ -15,6 +15,7 @@ interface IStokAuthProps {
     errorMsg?: string;
     onErrorClear: () => void;
     isRelayActive: boolean;
+    forcedMode?: 'DEFAULT' | 'JOIN';
 }
 
 export const IStokAuth: React.FC<IStokAuthProps> = ({ 
@@ -24,11 +25,12 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
     onJoin,
     errorMsg,
     onErrorClear,
-    isRelayActive
+    isRelayActive,
+    forcedMode = 'DEFAULT'
 }) => {
     const [targetId, setTargetId] = useState('');
     const [pin, setPin] = useState('');
-    const [isJoining, setIsJoining] = useState(false);
+    const [isJoining, setIsJoining] = useState(forcedMode === 'JOIN');
 
     // Glitch effect for identity
     const [glitchedIdentity, setGlitchedIdentity] = useState(identity);
@@ -62,6 +64,10 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
         }
         return () => clearInterval(interval);
     }, [identity]);
+
+    useEffect(() => {
+        if (forcedMode === 'JOIN') setIsJoining(true);
+    }, [forcedMode]);
 
     const handleJoinSubmit = () => {
         if (!targetId || pin.length < 4) return;
@@ -130,27 +136,29 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
             </div>
 
             {/* 3. ACTION DECK */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl z-10 animate-slide-up" style={{ animationDelay: '200ms' }}>
+            <div className={`w-full max-w-4xl z-10 animate-slide-up ${forcedMode === 'JOIN' ? 'flex justify-center' : 'grid grid-cols-1 md:grid-cols-2 gap-6'}`} style={{ animationDelay: '200ms' }}>
                 
-                {/* HOST CARD */}
-                <button 
-                    onClick={onHost}
-                    className="group relative p-8 rounded-[32px] bg-zinc-900/50 border border-white/10 hover:border-emerald-500/50 transition-all duration-500 hover:bg-zinc-900 flex flex-col items-start gap-6 text-left ring-1 ring-transparent hover:ring-emerald-500/20 active:scale-[0.98]"
-                >
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform border border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.1)]">
-                        <Server size={28} />
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-black text-white uppercase italic tracking-tight mb-2 group-hover:text-emerald-400 transition-colors">HOST FREQUENCY</h3>
-                        <p className="text-xs text-neutral-400 font-medium leading-relaxed font-mono">Create a secure, encrypted room. You become the relay anchor.</p>
-                    </div>
-                    <div className="mt-auto flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
-                        INITIALIZE <ArrowRight size={12} />
-                    </div>
-                </button>
+                {/* HOST CARD - HIDDEN IN FORCED JOIN MODE */}
+                {forcedMode !== 'JOIN' && (
+                    <button 
+                        onClick={onHost}
+                        className="group relative p-8 rounded-[32px] bg-zinc-900/50 border border-white/10 hover:border-emerald-500/50 transition-all duration-500 hover:bg-zinc-900 flex flex-col items-start gap-6 text-left ring-1 ring-transparent hover:ring-emerald-500/20 active:scale-[0.98]"
+                    >
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform border border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.1)]">
+                            <Server size={28} />
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-black text-white uppercase italic tracking-tight mb-2 group-hover:text-emerald-400 transition-colors">HOST FREQUENCY</h3>
+                            <p className="text-xs text-neutral-400 font-medium leading-relaxed font-mono">Create a secure, encrypted room. You become the relay anchor.</p>
+                        </div>
+                        <div className="mt-auto flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
+                            INITIALIZE <ArrowRight size={12} />
+                        </div>
+                    </button>
+                )}
 
-                {/* JOIN CARD (Interactive) */}
-                <div className={`relative p-8 rounded-[32px] border transition-all duration-500 flex flex-col items-start gap-6 text-left ring-1 bg-zinc-900/50 ${isJoining ? 'border-blue-500/50 ring-blue-500/20 bg-zinc-900' : 'border-white/10 hover:border-blue-500/30 ring-transparent'}`}>
+                {/* JOIN CARD (Interactive / Auto-Expanded in Forced Mode) */}
+                <div className={`relative p-8 rounded-[32px] border transition-all duration-500 flex flex-col items-start gap-6 text-left ring-1 bg-zinc-900/50 ${isJoining || forcedMode === 'JOIN' ? 'border-blue-500/50 ring-blue-500/20 bg-zinc-900 w-full max-w-md' : 'border-white/10 hover:border-blue-500/30 ring-transparent'}`}>
                     
                     {!isJoining ? (
                         <button className="w-full h-full flex flex-col items-start gap-6 text-left group" onClick={() => setIsJoining(true)}>
@@ -171,7 +179,9 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                                 <h3 className="text-sm font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
                                     <Radio size={14} className="animate-pulse"/> TARGET_PARAMETERS
                                 </h3>
-                                <button onClick={() => setIsJoining(false)} className="text-neutral-500 hover:text-white transition-colors"><Shield size={14}/></button>
+                                {forcedMode !== 'JOIN' && (
+                                    <button onClick={() => setIsJoining(false)} className="text-neutral-500 hover:text-white transition-colors"><Shield size={14}/></button>
+                                )}
                             </div>
                             
                             <div className="space-y-3 w-full">

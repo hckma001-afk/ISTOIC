@@ -1103,6 +1103,7 @@ export const IStokView: React.FC = () => {
                         errorMsg={errorMsg}
                         onErrorClear={() => setErrorMsg('')}
                         isRelayActive={isRelayActive}
+                        forcedMode="JOIN"
                      />
                  )}
             </div>
