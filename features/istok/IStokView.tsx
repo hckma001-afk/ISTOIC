@@ -925,4 +925,58 @@ export const IStokView: React.FC = () => {
                 onToggleMask={()=>setIsVoiceMasked(!isVoiceMasked)}
                 onStartRecord={async ()=>{
                     try {
-                        const stream = await navigator.mediaDevices.getUserMedia({audio
+                        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+                        const recorder = new MediaRecorder(stream);
+                        mediaRecorderRef.current = recorder;
+                        audioChunksRef.current = [];
+                        recorder.ondataavailable = e => audioChunksRef.current.push(e.data);
+                        recorder.start();
+                        setIsRecording(true);
+                        setRecordingTime(0);
+                        recordingIntervalRef.current = setInterval(()=>setRecordingTime(p=>p+1),1000);
+                    } catch(e) { alert("Mic Error"); }
+                }}
+                onStopRecord={()=>{
+                    if(mediaRecorderRef.current && isRecording) {
+                        mediaRecorderRef.current.stop();
+                        mediaRecorderRef.current.onstop = () => {
+                            const blob = new Blob(audioChunksRef.current, {type:'audio/webm'});
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                const b64 = (reader.result as string).split(',')[1];
+                                sendMessage('AUDIO', b64, {duration:recordingTime, isMasked:isVoiceMasked});
+                            };
+                            reader.readAsDataURL(blob);
+                            setIsRecording(false);
+                            clearInterval(recordingIntervalRef.current);
+                        };
+                    }
+                }}
+                onAttach={()=>fileInputRef.current?.click()}
+                ttlMode={ttlMode}
+                onToggleTtl={()=>setTtlMode(p => p===0 ? 10 : (p===10 ? 60 : 0))}
+                onAiAssist={handleAiAssist}
+                isAiThinking={isAiThinking}
+                translateTarget={translateTarget}
+                setTranslateTarget={setTranslateTarget}
+                connectionQuality={connectionQuality}
+                networkType={networkType}
+            />
+            <input type="file" ref={fileInputRef} className="hidden" onChange={(e)=>{
+                const f = e.target.files?.[0];
+                if(!f) return;
+                const r = new FileReader();
+                r.onload = async (ev) => {
+                    const res = ev.target?.result as string;
+                    if(f.type.startsWith('image/')) {
+                        const cmp = await compressImage(f);
+                        sendMessage('IMAGE', cmp.base64.split(',')[1], {size:cmp.size});
+                    } else {
+                        sendMessage('FILE', res.split(',')[1], {fileName:f.name, size:f.size, mimeType:f.type});
+                    }
+                };
+                r.readAsDataURL(f);
+            }}/>
+        </div>
+    );
+};
