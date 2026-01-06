@@ -9,7 +9,7 @@ import {
     Mic, Menu, PhoneCall, 
     QrCode, Lock, Flame, 
     ShieldAlert, ArrowLeft, BrainCircuit, Sparkles,
-    Wifi, WifiOff, Paperclip, Camera
+    Wifi, WifiOff, Paperclip, Camera, Globe, Languages, Check
 } from 'lucide-react';
 
 // --- HOOKS & SERVICES ---
@@ -19,14 +19,26 @@ import { SidebarIStokContact, IStokSession, IStokProfile } from './components/Si
 import { ShareConnection } from './components/ShareConnection'; 
 import { ConnectionNotification } from './components/ConnectionNotification';
 import { CallNotification } from './components/CallNotification';
-import { MessageBubble } from './components/MessageBubble';
-import { IStokAuth } from './components/IStokAuth';
-import { QRScanner } from './components/QRScanner'; // Pastikan file ini ada
+import { MessageBubble } from './components/MessageBubble'; // Pastikan import ini ada
+import { QRScanner } from './components/QRScanner'; 
 import { compressImage } from './components/gambar';
+import { AudioMessagePlayer } from './components/vn'; // Import Audio Player jika belum ada di MessageBubble
 
 // --- CONSTANTS ---
 const CHUNK_SIZE = 16384; 
 const HEARTBEAT_MS = 5000;
+
+// Daftar Bahasa Professional
+const SUPPORTED_LANGUAGES = [
+    { code: 'en', name: 'English (Pro)', icon: '🇺🇸' },
+    { code: 'id', name: 'Indonesia (Formal)', icon: '🇮🇩' },
+    { code: 'jp', name: 'Japanese (Keigo)', icon: '🇯🇵' },
+    { code: 'cn', name: 'Mandarin (Biz)', icon: '🇨🇳' },
+    { code: 'ru', name: 'Russian', icon: '🇷🇺' },
+    { code: 'ar', name: 'Arabic (MSA)', icon: '🇸🇦' },
+    { code: 'de', name: 'German', icon: '🇩🇪' },
+    { code: 'fr', name: 'French', icon: '🇫🇷' },
+];
 
 // --- TYPES ---
 interface Message {
@@ -42,6 +54,8 @@ interface Message {
     isMasked?: boolean;
     mimeType?: string;
     ttl?: number; 
+    isTranslated?: boolean; // New Flag
+    originalLang?: string;  // New Flag
 }
 
 type AppMode = 'SELECT' | 'HOST' | 'JOIN' | 'CHAT';
@@ -55,7 +69,7 @@ const triggerHaptic = (ms: number | number[]) => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms);
 };
 
-const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING' | 'BUZZ' | 'AI_THINK') => {
+const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING' | 'BUZZ' | 'AI_THINK' | 'TRANSLATE') => {
     try {
         const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (!AudioContextClass) return;
@@ -70,6 +84,14 @@ const playSound = (type: 'MSG_IN' | 'MSG_OUT' | 'CONNECT' | 'CALL_RING' | 'BUZZ'
             osc.frequency.setValueAtTime(800, now);
             osc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
             gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.1);
+            osc.start(now); osc.stop(now + 0.1);
+        } else if (type === 'TRANSLATE') {
+            // Suara futuristik 'processing'
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.linearRampToValueAtTime(800, now + 0.1);
+            gain.gain.setValueAtTime(0.05, now);
             gain.gain.linearRampToValueAtTime(0, now + 0.1);
             osc.start(now); osc.stop(now + 0.1);
         } else if (type === 'MSG_OUT') {
@@ -111,31 +133,86 @@ const getIceServers = async (): Promise<any[]> => {
     }
 };
 
-// --- SUB-COMPONENT: INPUT ---
-const IStokInput = React.memo(({ onSend, onTyping, disabled, isRecording, recordingTime, isVoiceMasked, onToggleMask, onStartRecord, onStopRecord, onAttach, ttlMode, onToggleTtl, onAiAssist, isAiThinking }: any) => {
+// --- SUB-COMPONENT: INPUT WITH AI TRANSLATE ---
+const IStokInput = React.memo(({ 
+    onSend, onTyping, disabled, isRecording, recordingTime, 
+    isVoiceMasked, onToggleMask, onStartRecord, onStopRecord, 
+    onAttach, ttlMode, onToggleTtl, onAiAssist, isAiThinking,
+    translateTarget, setTranslateTarget
+}: any) => {
     const [text, setText] = useState('');
+    const [showLangMenu, setShowLangMenu] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const insertText = (newText: string) => setText(newText);
 
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (showLangMenu && !(e.target as Element).closest('.lang-menu')) {
+                setShowLangMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showLangMenu]);
+
     return (
-        <div className="bg-[#09090b] border-t border-white/10 p-3 z-20 pb-[max(env(safe-area-inset-bottom),1rem)]">
+        <div className="bg-[#09090b] border-t border-white/10 p-3 z-20 pb-[max(env(safe-area-inset-bottom),1rem)] relative">
+            
+            {/* Language Selector Menu */}
+            {showLangMenu && (
+                <div className="lang-menu absolute bottom-full left-4 mb-2 bg-[#121214] border border-white/10 rounded-xl p-2 shadow-2xl w-48 animate-slide-up z-50">
+                    <div className="text-[9px] font-bold text-neutral-500 mb-2 px-2 uppercase tracking-widest">AI CORE TRANSLATE</div>
+                    <div className="space-y-1 max-h-48 overflow-y-auto custom-scroll">
+                        <button 
+                            onClick={() => { setTranslateTarget(null); setShowLangMenu(false); }}
+                            className={`w-full flex items-center gap-2 p-2 rounded-lg text-xs font-bold transition-all ${!translateTarget ? 'bg-emerald-600 text-white' : 'text-neutral-400 hover:bg-white/5'}`}
+                        >
+                            <X size={12} /> OFF (Original)
+                        </button>
+                        {SUPPORTED_LANGUAGES.map(lang => (
+                            <button 
+                                key={lang.code}
+                                onClick={() => { setTranslateTarget(lang); setShowLangMenu(false); }}
+                                className={`w-full flex items-center justify-between p-2 rounded-lg text-xs font-bold transition-all ${translateTarget?.code === lang.code ? 'bg-blue-600 text-white' : 'text-neutral-300 hover:bg-white/5'}`}
+                            >
+                                <span className="flex items-center gap-2">{lang.icon} {lang.name}</span>
+                                {translateTarget?.code === lang.code && <Check size={12}/>}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Top Toolbar */}
             <div className="flex items-center justify-between mb-2 px-1">
                  <div className="flex gap-2">
                      <button onClick={onToggleTtl} className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all ${ttlMode > 0 ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-white/5 border-white/5 text-neutral-500'}`}>
                         <Flame size={10} className={ttlMode > 0 ? 'fill-current' : ''} />
                         {ttlMode > 0 ? `${ttlMode}s` : 'OFF'}
                      </button>
+                     
                      <button 
                         onClick={() => onAiAssist(text, insertText)} 
                         disabled={isAiThinking}
                         className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all ${isAiThinking ? 'bg-purple-500/20 border-purple-500 text-purple-400 animate-pulse' : 'bg-white/5 border-white/5 text-neutral-500 hover:text-purple-400 hover:border-purple-500/30'}`}
                      >
                         {isAiThinking ? <Sparkles size={10} className="animate-spin" /> : <BrainCircuit size={10} />}
-                        {isAiThinking ? 'RACING...' : 'AI ASSIST'}
+                        {isAiThinking ? 'RACING...' : 'AI DRAFT'}
+                     </button>
+
+                     {/* Translation Toggle Button */}
+                     <button 
+                        onClick={() => setShowLangMenu(!showLangMenu)}
+                        className={`lang-menu flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all ${translateTarget ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-white/5 border-white/5 text-neutral-500 hover:text-white'}`}
+                     >
+                        <Globe size={10} />
+                        {translateTarget ? translateTarget.code.toUpperCase() : 'LANG'}
                      </button>
                  </div>
-                 <span className="text-[8px] font-mono text-emerald-500/50 flex items-center gap-1"><Lock size={8}/> E2EE_ON</span>
+                 
+                 <span className="text-[8px] font-mono text-emerald-500/50 flex items-center gap-1"><Lock size={8}/> E2EE</span>
             </div>
 
             <div className="flex gap-2 items-end">
@@ -146,13 +223,19 @@ const IStokInput = React.memo(({ onSend, onTyping, disabled, isRecording, record
                         value={text} 
                         onChange={e=>{setText(e.target.value); onTyping();}} 
                         onKeyDown={e=>e.key==='Enter'&&text.trim()&&(onSend(text),setText(''))} 
-                        placeholder={isRecording ? "Recording encrypted audio..." : "Message..."} 
+                        placeholder={isRecording ? "Recording..." : (translateTarget ? `Translating to ${translateTarget.name}...` : "Message...")} 
                         className="w-full bg-transparent outline-none text-white text-sm placeholder:text-neutral-600" 
-                        disabled={disabled||isRecording}
+                        disabled={disabled||isRecording || isAiThinking}
                     />
                 </div>
                 {text.trim() ? (
-                    <button onClick={()=>{onSend(text);setText('');}} className="p-3 bg-emerald-600 rounded-full text-white shadow-lg hover:bg-emerald-500 active:scale-95 transition-all"><Send size={20}/></button>
+                    <button 
+                        onClick={()=>{onSend(text); setText('');}} 
+                        disabled={isAiThinking}
+                        className={`p-3 rounded-full text-white shadow-lg transition-all active:scale-95 ${isAiThinking ? 'bg-neutral-700 cursor-wait' : (translateTarget ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500')}`}
+                    >
+                        {isAiThinking ? <Languages size={20} className="animate-pulse"/> : <Send size={20}/>}
+                    </button>
                 ) : (
                     <button 
                         onMouseDown={onStartRecord} onMouseUp={onStopRecord} 
@@ -202,7 +285,10 @@ export const IStokView: React.FC = () => {
     const [recordingTime, setRecordingTime] = useState(0);
     const [isVoiceMasked, setIsVoiceMasked] = useState(false);
     const [ttlMode, setTtlMode] = useState(0); 
+    
+    // AI & TRANSLATION
     const [isAiThinking, setIsAiThinking] = useState(false); 
+    const [translateTarget, setTranslateTarget] = useState<any>(null); // State for active language
 
     // NOTIFICATIONS
     const [incomingRequest, setIncomingRequest] = useState<any>(null);
@@ -226,7 +312,6 @@ export const IStokView: React.FC = () => {
     
     useEffect(() => { msgEndRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
 
-    // DEEP LINKING (QR Scan / Link Auto Join)
     useEffect(() => {
         activatePrivacyShield();
         try {
@@ -234,7 +319,6 @@ export const IStokView: React.FC = () => {
             const connect = url.searchParams.get('connect');
             const key = url.searchParams.get('key');
             if (connect && key) {
-                console.log("[ISTOK_AUTO] Found Deep Link Credentials");
                 setTargetPeerId(connect);
                 setAccessPin(key);
                 setMode('JOIN');
@@ -244,7 +328,7 @@ export const IStokView: React.FC = () => {
         } catch(e) {}
     }, []);
 
-    // --- LOGIC: HELPER FUNCTIONS (DEFINED BEFORE USEEFFECT) ---
+    // --- LOGIC: HELPER FUNCTIONS ---
     
     const startHeartbeat = useCallback(() => {
         if (heartbeatRef.current) clearInterval(heartbeatRef.current);
@@ -263,7 +347,6 @@ export const IStokView: React.FC = () => {
     }, []);
 
     const handleData = useCallback(async (data: any, incomingConn?: any) => {
-        // CHUNK REASSEMBLY
         if (data.type === 'CHUNK') {
             const { id, idx, total, chunk } = data;
             if(!chunkBuffer.current[id]) chunkBuffer.current[id] = { chunks: new Array(total), count:0, total };
@@ -282,7 +365,6 @@ export const IStokView: React.FC = () => {
 
         const currentPin = pinRef.current;
 
-        // PROTOCOL
         if (data.type === 'REQ') {
             const json = await decryptData(data.payload, currentPin);
             if (json) {
@@ -303,8 +385,6 @@ export const IStokView: React.FC = () => {
                     setIsPeerOnline(true);
                     startHeartbeat();
                     playSound('CONNECT');
-                    
-                    // Save Session
                     setSessions(prev => {
                         const exists = prev.find(s => s.id === connRef.current.peer);
                         const newSess: IStokSession = {
@@ -332,7 +412,7 @@ export const IStokView: React.FC = () => {
         else if (data.type === 'SIGNAL' && data.action === 'BUZZ') { triggerHaptic([100,50,100]); playSound('BUZZ'); }
     }, [startHeartbeat, setSessions]);
 
-    // --- PEER INIT (POWERFUL VERSION) ---
+    // --- PEER INIT ---
     useEffect(() => {
         let mounted = true;
         if (peerRef.current) return;
@@ -356,7 +436,6 @@ export const IStokView: React.FC = () => {
                     console.log("[ISTOK_NET] Peer Ready:", myProfile.id);
                     setStage('IDLE');
                     if (pendingJoin) {
-                        // Delay sedikit untuk memastikan Peer stabil
                         setTimeout(() => joinSession(pendingJoin.id, pendingJoin.pin), 1000);
                         setPendingJoin(null);
                     }
@@ -374,14 +453,12 @@ export const IStokView: React.FC = () => {
                 });
 
                 peer.on('error', err => {
-                    console.warn("Peer Error:", err);
                     if (err.type === 'peer-unavailable') { setErrorMsg("Target Offline"); setStage('IDLE'); }
                     else if (err.type === 'disconnected') { peer.reconnect(); }
                 });
 
                 peerRef.current = peer;
             } catch (e) {
-                console.error("Init Failed", e);
                 setErrorMsg("Net Init Fail");
             }
         };
@@ -393,7 +470,7 @@ export const IStokView: React.FC = () => {
         };
     }, []);
 
-    // --- LOGIC: CONNECTION ---
+    // --- FUNCTIONS ---
 
     const joinSession = (id?: string, pin?: string) => {
         const target = id || targetPeerId;
@@ -429,12 +506,9 @@ export const IStokView: React.FC = () => {
         conn.on('error', () => { setStage('IDLE'); setErrorMsg("Conn Error"); });
     };
 
-    // --- LOGIC: SCANNER ---
     const handleQRScan = (data: string) => {
         setShowScanner(false);
-        playSound('CONNECT'); // Bunyi 'bip'
-        
-        // Coba parse URL dulu (jika bentuknya link)
+        playSound('CONNECT');
         try {
             const url = new URL(data);
             const connect = url.searchParams.get('connect');
@@ -444,21 +518,11 @@ export const IStokView: React.FC = () => {
                 return;
             }
         } catch(e) {}
-
-        // Jika data mentah (JSON atau string biasa)
-        try {
-           const parsed = JSON.parse(data);
-           if(parsed.id && parsed.pin) {
-               joinSession(parsed.id, parsed.pin);
-               return;
-           }
-        } catch(e) {}
-
-        // Fallback: Jika cuma ID
         setTargetPeerId(data);
     };
 
-    // --- LOGIC: OMNI RACE AI ---
+    // --- POWERFUL AI FEATURES ---
+
     const handleAiAssist = async (currentText: string, setTextCallback: (t: string) => void) => {
         setIsAiThinking(true);
         playSound('AI_THINK');
@@ -482,24 +546,70 @@ export const IStokView: React.FC = () => {
                setTimeout(() => setTextCallback("AI Engine not ready."), 1000);
             }
         } catch (e) {
-            console.error("AI Race Failed", e);
-            setErrorMsg("AI Offline");
+            console.error(e);
         } finally {
             setIsAiThinking(false);
         }
     };
 
-    // --- LOGIC: SENDING ---
+    // --- CORE TRANSLATE LOGIC ---
+    const performNeuralTranslation = async (text: string, langName: string): Promise<string> => {
+        if (!text) return text;
+        try {
+            // Using OMNI_KERNEL to ensure professional quality
+            // If OMNI_KERNEL not available, fallback to simple prompt simulation or basic replace
+            if (OMNI_KERNEL && OMNI_KERNEL.raceStream) {
+                const prompt = `Translate the following text to ${langName}. 
+                IMPORTANT: Maintain a professional, accurate, and culturally appropriate tone. 
+                Do not add explanations, just return the translated text.
+                Text: "${text}"`;
+                
+                const stream = OMNI_KERNEL.raceStream(prompt, "You are a professional translator engine.");
+                let fullTranslation = '';
+                for await (const chunk of stream) {
+                    if (chunk.text) fullTranslation += chunk.text;
+                }
+                return fullTranslation.trim() || text;
+            }
+            return text + " [AI Offline]";
+        } catch (e) {
+            console.error("Translation Failed", e);
+            return text;
+        }
+    };
+
+    // --- SEND LOGIC ---
     const sendMessage = async (type: string, content: string, extras = {}) => {
         if (!connRef.current) return;
+        
+        let finalContent = content;
+        let isTranslated = false;
+
+        // 1. Intercept for AI Translation
+        if (type === 'TEXT' && translateTarget && content.trim().length > 0) {
+            setIsAiThinking(true);
+            playSound('TRANSLATE'); // Efek suara translate
+            finalContent = await performNeuralTranslation(content, translateTarget.name);
+            isTranslated = true;
+            setIsAiThinking(false);
+        }
+
         const msgId = crypto.randomUUID();
         const timestamp = Date.now();
-        const payloadObj = { id: msgId, type, content, timestamp, ttl: ttlMode, ...extras };
+        const payloadObj = { 
+            id: msgId, 
+            type, 
+            content: finalContent, 
+            timestamp, 
+            ttl: ttlMode,
+            isTranslated,
+            originalLang: translateTarget ? translateTarget.name : undefined,
+            ...extras 
+        };
         
         const encrypted = await encryptData(JSON.stringify(payloadObj), pinRef.current);
         if (!encrypted) return;
 
-        // Smart Chunking
         if (encrypted.length > CHUNK_SIZE) {
             const id = crypto.randomUUID();
             const total = Math.ceil(encrypted.length / CHUNK_SIZE);
@@ -544,8 +654,8 @@ export const IStokView: React.FC = () => {
                 <div className="text-center z-10 space-y-2 mb-10">
                     <h1 className="text-5xl font-black text-white italic tracking-tighter drop-shadow-lg">IStoic <span className="text-emerald-500">P2P</span></h1>
                     <div className="flex items-center justify-center gap-2">
-                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded border border-emerald-500/20">V3.0 HYBRID</span>
-                        <span className="px-2 py-0.5 bg-purple-500/10 text-purple-500 text-[9px] font-bold rounded border border-purple-500/20">OMNI-AI</span>
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded border border-emerald-500/20">V4.0 NEURAL</span>
+                        <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[9px] font-bold rounded border border-blue-500/20">POLYGLOT</span>
                     </div>
                 </div>
 
@@ -585,7 +695,6 @@ export const IStokView: React.FC = () => {
     if (mode === 'HOST' || mode === 'JOIN') {
         return (
             <div className="h-[100dvh] bg-black flex flex-col items-center justify-center p-6 relative">
-                {/* QR Scanner Overlay */}
                 {showScanner && <QRScanner onScan={handleQRScan} onClose={()=>setShowScanner(false)} />}
 
                 <button onClick={()=>{setMode('SELECT'); setStage('IDLE');}} className="absolute top-6 left-6 text-neutral-500 hover:text-white flex items-center gap-2 text-xs font-bold"><ArrowLeft size={16}/> ABORT</button>
@@ -714,6 +823,8 @@ export const IStokView: React.FC = () => {
                 onToggleTtl={()=>setTtlMode(p => p===0 ? 10 : (p===10 ? 60 : 0))}
                 onAiAssist={handleAiAssist}
                 isAiThinking={isAiThinking}
+                translateTarget={translateTarget}
+                setTranslateTarget={setTranslateTarget}
             />
             <input type="file" ref={fileInputRef} className="hidden" onChange={(e)=>{
                 const f = e.target.files?.[0];
