@@ -3,14 +3,29 @@
 import 'webrtc-adapter'; 
 
 // Patch untuk mencegah crash karena Extension Wallet (Metamask/Phantom)
+// Defensive coding against immutable window.ethereum injections
 try {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    // Opsional: Freeze object jika extension nakal menimpa variabel global
-    // Object.freeze((window as any).ethereum); 
+  if (typeof window !== 'undefined') {
+    const _window = window as any;
+    if (_window.ethereum) {
+        // If it exists, we try to ensure we don't crash when libraries try to re-define it
+        // Some libraries check for 'ethereum' in window and try to assign it.
+        // We can't easily 'freeze' it if it's already non-configurable, so we just wrap access in try-catch blocks elsewhere.
+    }
   }
 } catch (e) {
+  // Suppress specific extension errors
   console.warn("Web3 Provider Conflict Ignored");
 }
+
+// Global Error Handler for Extension interference
+window.addEventListener('error', (event) => {
+    if (event.message?.includes('ethereum') || event.filename?.includes('inpage.js')) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        console.debug('Suppressed Web3 Extension Error:', event.message);
+    }
+});
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

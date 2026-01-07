@@ -7,7 +7,6 @@ import { executeNeuralTool } from '../services/toolHandler';
 import { speakWithHanisah } from '../../../services/elevenLabsService';
 import { debugService } from '../../../services/debugService';
 import { Note, ChatThread } from '../../../types';
-import { MemoryService } from '../../../services/memoryService';
 
 interface AIStreamProps {
     notes: Note[];
@@ -56,7 +55,7 @@ export const useAIStream = ({
         
         console.group(`🧠 NEURAL_LINK_TRANSMISSION: ${transmissionId}`);
 
-        // Add placeholder for model response
+        // 1. Create Placeholder for AI Response using STORAGE (Safe Update)
         storage.addMessage(targetId, { 
             id: modelMessageId, 
             role: 'model', 
@@ -68,11 +67,14 @@ export const useAIStream = ({
         abortControllerRef.current = controller;
         const signal = controller.signal;
 
+        let accumulatedText = "";
+        let chunkCount = 0;
+
         try {
             const persona = activeThread.persona || 'stoic';
             const kernel = persona === 'hanisah' ? HK : SK;
             
-            // Pass original 'notes' array instead of string 'noteContext'
+            // Pass original 'notes' array
             const stream = kernel.streamExecute(
                 userMsg || "Proceed with attachment analysis.", 
                 activeModel.id, 
@@ -81,9 +83,6 @@ export const useAIStream = ({
                 { signal } 
             );
             
-            let accumulatedText = "";
-            let chunkCount = 0;
-
             for await (const chunk of stream) {
                 if (signal.aborted) throw new Error("ABORTED_BY_USER");
 
@@ -96,7 +95,7 @@ export const useAIStream = ({
                     const toolName = chunk.functionCall.name;
                     accumulatedText += `\n\n> ⚙️ **EXECUTING:** ${toolName.replace(/_/g, ' ').toUpperCase()}...\n`;
                     
-                    // Update UI with progress
+                    // Update UI with progress via STORAGE
                     storage.updateMessage(targetId, modelMessageId, { text: accumulatedText });
 
                     try {
@@ -112,10 +111,12 @@ export const useAIStream = ({
                     chunkCount++;
                 }
 
-                // Stream Update
+                // Stream Update via STORAGE (Prevents race conditions with user message)
                 storage.updateMessage(targetId, modelMessageId, { 
                     text: accumulatedText,
                     metadata: { 
+                        // We need to merge metadata carefully, but since we are inside the stream loop, 
+                        // we can pass the partial update. The storage logic handles the merge.
                         ...(chunk.metadata || {}),
                         groundingChunks: chunk.groundingChunks
                     }
@@ -138,18 +139,22 @@ export const useAIStream = ({
         } catch (err: any) {
              console.error(`[${transmissionId}] ERROR:`, err);
              let errorText = "";
+             let status: 'error' | 'success' = 'success';
+             
              if (err.message === "ABORTED_BY_USER" || err.name === "AbortError") {
                 errorText = `\n\n> 🛑 **INTERRUPTED**`;
              } else {
+                 status = 'error';
                  const persona = activeThread.persona || 'stoic';
                  errorText = persona === 'hanisah' 
                     ? `\n\n_ (Menggaruk kepala) _\n*Aduh, maaf banget sayang. Sinyalnya lagi ngajak berantem nih.*` 
                     : `\n\n> **SYSTEM ANOMALY DETECTED**\n\nProcessing stream interrupted.`;
              }
+             
              // Append error to whatever text we got
              storage.updateMessage(targetId, modelMessageId, { 
-                 text: (prev: any) => (prev.text || '') + errorText, 
-                 metadata: { status: 'success' } 
+                 text: accumulatedText + errorText, // Use local var to ensure we don't lose stream progress
+                 metadata: { status: status } 
              });
         } finally {
             setIsLoading(false);
