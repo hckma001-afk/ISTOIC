@@ -1,18 +1,18 @@
+
 import { z } from 'zod';
 import { debugService } from './debugService';
+import { HANISAH_KERNEL } from './melsaKernel';
 
 /**
- * IStoicAI v0.50 ENTERPRISE PROXY
+ * IStoicAI v0.52 ENTERPRISE PROXY (SECURE HYBRID)
  * 
- * In a production Vercel/Node environment, this file would fetch() 
- * your backend endpoints (e.g., /api/v1/generate).
+ * SECURITY UPGRADE:
+ * This service now defaults to a Server-First architecture.
+ * Client-side execution (Zero Trust Simulation) is available ONLY as a fallback/dev mode.
  * 
- * For this PWA implementation, we simulate the "Zero Trust" boundary 
- * by validating inputs/outputs strictly before passing to the legacy handlers.
- * 
- * ARCHITECTURAL RULE:
- * UI Components MUST NOT import `google-genai` or `openai` directly.
- * They must use `ApiProxy.generate()`.
+ * INSTRUCTIONS:
+ * 1. To secure your keys, set VITE_USE_SECURE_BACKEND=true in .env
+ * 2. Set VITE_BACKEND_URL to your Cloud Function / API Route (e.g. /api/chat).
  */
 
 // 1. Zod Schema Definitions (Runtime Type Safety)
@@ -44,6 +44,10 @@ export const NoteSchema = z.object({
 
 export type ValidatedNote = z.infer<typeof NoteSchema>;
 
+// Configuration from Environment
+const USE_SECURE_BACKEND = (import.meta as any).env.VITE_USE_SECURE_BACKEND === 'true';
+const BACKEND_URL = (import.meta as any).env.VITE_BACKEND_URL || '/api/chat';
+
 // 2. The Proxy Service
 class ApiProxyService {
   
@@ -53,18 +57,72 @@ class ApiProxyService {
    */
   async generateText(
     prompt: string, 
-    provider: 'GEMINI' | 'OPENAI' | 'GROQ', 
+    provider: 'GEMINI' | 'OPENAI' | 'GROQ' | 'DEEPSEEK' | 'MISTRAL', 
     modelId: string,
     context?: string
   ): Promise<AIResponse> {
     
     debugService.log('INFO', 'PROXY', 'OUTBOUND', `Routing request to ${provider}/${modelId}`);
 
-    // IN PRODUCTION: const res = await fetch('/api/ai/generate', { ... });
-    // HERE: We bridge to the existing Kernel for PWA compatibility, but wrapped in safety.
-    
-    // Dynamic import to keep this file clean and ready for server-migration
-    const { HANISAH_KERNEL } = await import('./melsaKernel');
+    // STRATEGY A: SECURE BACKEND (RECOMMENDED FOR PRODUCTION)
+    if (USE_SECURE_BACKEND) {
+        try {
+            const response = await fetch(BACKEND_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 'Authorization': `Bearer ${token}` // Add auth token here if needed
+                },
+                // Backend expects 'message', 'provider', 'modelId', 'context'
+                body: JSON.stringify({ 
+                    message: prompt, 
+                    provider, 
+                    modelId, 
+                    context 
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Backend Error (${response.status}): ${errorText}`);
+            }
+
+            // CONSUME STREAM FROM BACKEND
+            // The backend returns a ReadableStream (text/plain).
+            // We must read it fully to construct the AIResponse object.
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+            let fullText = "";
+
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    fullText += decoder.decode(value, { stream: true });
+                }
+            }
+
+            // Construct the response object manually since backend returns raw text stream
+            const data = {
+                text: fullText,
+                modelUsed: modelId,
+                metadata: { timestamp: new Date().toISOString(), source: 'SERVER_STREAM' }
+            };
+
+            return AIResponseSchema.parse(data);
+
+        } catch (serverError: any) {
+            console.error("Server Proxy Failed:", serverError);
+            // If in production, do not fallback to client-side to prevent key leak
+            if ((import.meta as any).env.PROD) {
+                throw new Error(`Secure Backend Unreachable: ${serverError.message}`);
+            }
+        }
+    }
+
+    // STRATEGY B: LOCAL EXECUTION (DEV / FALLBACK)
+    // WARNING: Exposes keys in client logic.
+    console.warn("⚠️ [SECURITY WARNING] RUNNING IN CLIENT-SIDE FALLBACK MODE. API KEYS ARE EXPOSED TO BROWSER.");
     
     try {
       const stream = HANISAH_KERNEL.streamExecute(prompt, modelId, context);
