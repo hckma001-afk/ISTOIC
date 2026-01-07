@@ -18,7 +18,7 @@ export const useChatLogic = (notes: Note[], setNotes: (notes: Note[]) => void) =
     // 1. Storage Logic
     const storage = useChatStorage();
     const { 
-        threads, setThreads, activeThread, activeThreadId, setActiveThreadId,
+        threads, setThreads, activeThreadId, setActiveThreadId,
         createThread, addMessage, renameThread, isThreadsLoaded 
     } = storage;
 
@@ -32,12 +32,27 @@ export const useChatLogic = (notes: Note[], setNotes: (notes: Note[]) => void) =
     const [input, setInput] = useState('');
     const [isLiveModeActive, setIsLiveModeActive] = useState(false);
 
+    // Ref to track ID instantly before state updates
     const pendingThreadId = useRef<string | null>(null);
     
     // Refs for background processes (Memory Core)
     const notesRef = useRef(notes);
-    const activeThreadRef = useRef<ChatThread | null>(null);
+    
+    // 3. ROBUST ACTIVE THREAD RESOLUTION
+    // Uses pendingThreadId if activeThreadId matches it but thread isn't found yet (race condition fix)
+    const activeThread = useMemo(() => {
+        // Priority 1: Direct match from Storage ID
+        let thread = threads.find(t => t.id === activeThreadId);
+        
+        // Priority 2: Fallback to pending ID if state hasn't synced yet
+        if (!thread && pendingThreadId.current) {
+            thread = threads.find(t => t.id === pendingThreadId.current);
+        }
+        
+        return thread || null;
+    }, [threads, activeThreadId]);
 
+    const activeThreadRef = useRef<ChatThread | null>(null);
     useEffect(() => { notesRef.current = notes; }, [notes]);
     useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
 
@@ -80,6 +95,8 @@ export const useChatLogic = (notes: Note[], setNotes: (notes: Note[]) => void) =
         
         // Use storage to create thread which handles IDB sync
         const newThread = createThread(persona, globalModelId, welcome);
+        
+        // CRITICAL: Set pending ID immediately so UI doesn't flicker
         pendingThreadId.current = newThread.id;
         
         return newThread;
@@ -100,18 +117,24 @@ export const useChatLogic = (notes: Note[], setNotes: (notes: Note[]) => void) =
         const userMsg = input.trim();
         if ((!userMsg && !attachment) || isLoading) return;
 
+        // Clear input immediately for responsiveness
+        setInput('');
+
         let currentThreadId = activeThreadId;
-        // If we are about to create a new thread, use that persona. Otherwise use current active thread persona.
         let currentPersona = personaMode; 
 
         // CRITICAL FIX: Verify thread actually exists in loaded threads.
-        // If activeThreadId is set but not found, we must create a new one.
         const threadExists = threads.some(t => t.id === currentThreadId);
 
+        // If no thread or invalid ID, create new one
         if (!currentThreadId || !threadExists) {
             const newThread = await handleNewChat(personaMode);
             currentThreadId = newThread.id;
             currentPersona = newThread.persona;
+            
+            // Force small delay to allow React state to catch up with the new thread creation
+            // This prevents "Message sent to void" error
+            await new Promise(r => setTimeout(r, 50));
         }
 
         const newUserMsg: ChatMessage = {
@@ -129,10 +152,9 @@ export const useChatLogic = (notes: Note[], setNotes: (notes: Note[]) => void) =
         if (thread && thread.messages.length <= 2 && userMsg) {
             renameThread(currentThreadId!, userMsg.slice(0, 30).toUpperCase());
         }
-
-        setInput('');
         
         // 2. Trigger Stream with explicit ID to avoid race condition
+        // We pass the ID explicitly so stream doesn't rely on potentially stale 'activeThread' state
         await streamMessage(userMsg, activeModel, currentThreadId!, currentPersona, attachment);
     };
 
