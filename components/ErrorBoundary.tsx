@@ -1,5 +1,5 @@
 
-import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import React, { type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Terminal, ZapOff, Copy, Check, ShieldAlert } from 'lucide-react';
 import { debugService } from '../services/debugService';
 import { KEY_MANAGER } from '../services/geminiService';
@@ -16,12 +16,7 @@ interface ErrorBoundaryState {
   copied: boolean;
 }
 
-/**
- * ErrorBoundary captures runtime errors in its child component tree.
- * "Fokus pada apa yang ada di depan mata Anda sekarang." — Marcus Aurelius.
- * Menangani kegagalan sistem dengan ketenangan stoik.
- */
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   
   public state: ErrorBoundaryState = {
     hasError: false,
@@ -35,8 +30,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Only set errorInfo if we want to store stack trace in state, 
-    // note that getDerivedStateFromError already handles hasError/error.
     this.setState({ errorInfo });
     
     const view = this.props.viewName || 'UNKNOWN_MODULE';
@@ -77,7 +70,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   handleReset = () => {
-      if(confirm("Factory Reset: Ini akan menghapus semua LocalStorage untuk memperbaiki state yang korup. Lanjutkan?")) {
+      // Safer Reset: Ask user confirmation and clarify scope
+      if(confirm("FACTORY RESET: This will clear all app configuration, cached chats, and local settings to fix corruption. Your Vault data should persist if backed up. Proceed?")) {
+          // Clear only known app keys ideally, but for now clear all to ensure recovery from corrupt state
           localStorage.clear();
           window.location.reload();
       }

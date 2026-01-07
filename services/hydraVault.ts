@@ -31,10 +31,8 @@ export class HydraVault {
   }
 
   public refreshPools() {
-    const rawEnv = { 
-        ...((typeof process !== 'undefined' && process.env) || {}),
-        ...((import.meta as any).env || {})
-    };
+    // Vite exposes env vars on import.meta.env
+    const env = (import.meta as any).env;
 
     const providers: Provider[] = ['GEMINI', 'GROQ', 'OPENAI', 'DEEPSEEK', 'MISTRAL', 'OPENROUTER', 'ELEVENLABS', 'HUGGINGFACE'];
 
@@ -49,17 +47,14 @@ export class HydraVault {
             });
         };
 
-        // Aggressive Scan
-        addKey(rawEnv[`VITE_${provider}_API_KEY`]);
-        addKey(rawEnv[`${provider}_API_KEY`]);
-        addKey(rawEnv[provider]);
+        // Aggressive Scan for VITE_ Prefixed Keys
+        addKey(env[`VITE_${provider}_API_KEY`]);
+        addKey(env[`${provider}_API_KEY`]); // Fallback if manually defined elsewhere
 
         if (provider === 'GEMINI') {
-            addKey(rawEnv['GOOGLE_API_KEY']);
-            addKey(rawEnv['VITE_GOOGLE_API_KEY']);
-            addKey(rawEnv['API_KEY']); 
+            addKey(env['VITE_GOOGLE_API_KEY']);
         }
-        if (provider === 'HUGGINGFACE') addKey(rawEnv['HF_TOKEN']);
+        if (provider === 'HUGGINGFACE') addKey(env['VITE_HF_TOKEN']);
 
         this.vault[provider] = Array.from(keys).map((k, index) => ({
             cloakedKey: SECURITY_MATRIX.cloak(k), 
@@ -103,8 +98,6 @@ export class HydraVault {
     
     if (activeKeys.length === 0) {
         debugService.log('WARN', 'HYDRA_FAIL', 'DEPLETED', `All keys for ${provider} are in cooldown.`);
-        // V20 Emergency Bypass: If all dead, force use the "least recently failed" (risk taking)
-        // Or simply return null to trigger provider failover in Kernel.
         return null; 
     }
 
@@ -114,8 +107,6 @@ export class HydraVault {
 
     // Increment for next time
     this.counters[provider] = (currentIndex + 1) % activeKeys.length;
-
-    // debugService.log('TRACE', 'HYDRA_ROTATE', 'SELECT', `Rotating to ${selectedKey.id} (Index ${currentIndex})`);
 
     return SECURITY_MATRIX.decloak(selectedKey.cloakedKey);
   }
@@ -130,9 +121,6 @@ export class HydraVault {
     record.status = 'COOLDOWN';
     
     // SMART PENALTY V20
-    // Rate Limit (429) -> 5 mins
-    // Overloaded (503) -> 1 min
-    // Other -> 30 sec (Quick retry)
     const errStr = JSON.stringify(error).toLowerCase();
     let penaltyMs = 30000; // Default 30s
 
@@ -144,11 +132,11 @@ export class HydraVault {
     
     record.cooldownUntil = Date.now() + penaltyMs;
     
-    debugService.log('WARN', 'HYDRA_PENALTY', 'COOLDOWN', `${provider} Key ${record.id} penalized for ${penaltyMs/1000}s. Reason: ${error.message?.slice(0, 50)}`);
+    debugService.log('WARN', 'HYDRA_PENALTY', 'COOLDOWN', `${provider} Key ${record.id} penalized for ${penaltyMs/1000}s.`);
   }
 
   public reportSuccess(provider: Provider) {
-      // V20: Success keeps the key healthy. No action needed for Round Robin.
+      // V20: Success keeps the key healthy.
   }
 
   public isProviderHealthy(provider: Provider): boolean {
