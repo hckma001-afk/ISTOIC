@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Radio, X, Volume2, Activity, Wifi, Zap } from 'lucide-react';
 import { debugService } from '../../../services/debugService';
-import { getGlobalAudioContext, resumeGlobalAudio } from '../../../services/globalAudio';
 
 interface IStokWalkieTalkieProps {
     onClose: () => void;
@@ -53,52 +51,33 @@ const playTone = (ctx: AudioContext, type: 'ROGER_BEEP' | 'RX_START' | 'TX_START
 export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, onSendAudio, latestMessage }) => {
     const [status, setStatus] = useState<'IDLE' | 'TX' | 'RX'>('IDLE');
     const [duration, setDuration] = useState(0);
-    
-    // ASYNC QUEUE REFS
-    const audioQueueRef = useRef<string[]>([]);
-    const isPlayingRef = useRef(false);
-    
-    // Use Ref for status to access it inside async closures without dependency loops
-    const statusRef = useRef<'IDLE' | 'TX' | 'RX'>('IDLE');
+    const [audioQueue, setAudioQueue] = useState<string[]>([]);
     
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<any>(null);
-    
+    const audioCtxRef = useRef<AudioContext | null>(null);
+    const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
     const processedMessageIds = useRef<Set<string>>(new Set());
 
-    // Sync Ref with State
+    // Initialize Audio Context
     useEffect(() => {
-        statusRef.current = status;
+        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+        audioCtxRef.current = new AudioContext();
         
-        // If we just went back to IDLE, check queue
-        if (status === 'IDLE') {
-            processAudioQueue();
-        }
-    }, [status]);
-
-    // --- QUEUE PROCESSOR ---
-    const processAudioQueue = async () => {
-        // ANTI-FEEDBACK: Do not play if Transmitting (TX) or already Playing
-        if (isPlayingRef.current || statusRef.current === 'TX' || audioQueueRef.current.length === 0) return;
-
-        isPlayingRef.current = true;
-        const nextBase64 = audioQueueRef.current.shift();
-        
-        if (nextBase64) {
-            try {
-                await playIncomingAudio(nextBase64);
-            } catch (e) {
-                console.error("Playback error", e);
-            } finally {
-                isPlayingRef.current = false;
-                // Recursively check for next item after a small breathing room
-                setTimeout(processAudioQueue, 300);
+        // iOS Fix: Resume context on user interaction if needed
+        const unlock = () => {
+            if (audioCtxRef.current?.state === 'suspended') {
+                audioCtxRef.current.resume();
             }
-        } else {
-            isPlayingRef.current = false;
-        }
-    };
+            window.removeEventListener('touchstart', unlock);
+            window.removeEventListener('click', unlock);
+        };
+        window.addEventListener('touchstart', unlock);
+        window.addEventListener('click', unlock);
+
+        return () => { audioCtxRef.current?.close(); };
+    }, []);
 
     // INCOMING MESSAGE HANDLER
     useEffect(() => {
@@ -106,81 +85,66 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
         
         if (!processedMessageIds.current.has(latestMessage.id)) {
             processedMessageIds.current.add(latestMessage.id);
-            // Add to Ref queue (synchronous push)
-            audioQueueRef.current.push(latestMessage.content);
-            // Trigger processor
-            processAudioQueue();
+            // Add to playback queue
+            setAudioQueue(prev => [...prev, latestMessage.content]);
         }
     }, [latestMessage]);
 
-    const playIncomingAudio = (base64: string): Promise<void> => {
-        return new Promise(async (resolve) => {
-            // Double check status before starting playback to prevent race conditions
-            if (statusRef.current === 'TX') {
-                // If user started talking while we were preparing, put it back in queue
-                audioQueueRef.current.unshift(base64);
-                resolve();
-                return;
-            }
+    // QUEUE PROCESSOR
+    useEffect(() => {
+        if (status === 'IDLE' && audioQueue.length > 0) {
+            playIncomingAudio(audioQueue[0]);
+            setAudioQueue(prev => prev.slice(1));
+        }
+    }, [status, audioQueue]);
 
-            const ctx = getGlobalAudioContext();
-            // IMPORTANT for iOS: Resume context on user interaction triggered playback
-            await resumeGlobalAudio();
+    const playIncomingAudio = async (base64: string) => {
+        if (!audioCtxRef.current) return;
+        setStatus('RX');
+        playTone(audioCtxRef.current, 'RX_START');
+
+        try {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+            const audioBuffer = await audioCtxRef.current.decodeAudioData(bytes.buffer);
+            const source = audioCtxRef.current.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioCtxRef.current.destination);
             
-            setStatus('RX');
-            playTone(ctx, 'RX_START');
+            activeSourceRef.current = source;
+            source.start();
 
-            try {
-                const binaryString = atob(base64);
-                const len = binaryString.length;
-                const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-
-                const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
-                const source = ctx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(ctx.destination);
-                
-                source.onended = () => {
-                    playTone(ctx, 'ROGER_BEEP');
-                    setStatus('IDLE');
-                    resolve(); // Resolve promise only when audio finishes
-                };
-
-                source.start();
-            } catch (e) {
-                console.error("PTT Playback Error", e);
+            source.onended = () => {
+                if (audioCtxRef.current) playTone(audioCtxRef.current, 'ROGER_BEEP');
                 setStatus('IDLE');
-                resolve(); // Resolve even on error to unblock queue
-            }
-        });
+                activeSourceRef.current = null;
+            };
+        } catch (e) {
+            console.error("PTT Playback Error", e);
+            setStatus('IDLE');
+        }
     };
 
     const startTx = async () => {
-        if (status !== 'IDLE') return;
+        if (status !== 'IDLE' || !audioCtxRef.current) return;
         
-        const ctx = getGlobalAudioContext();
-        // IMPORTANT for iOS: Resume context on button press
-        await resumeGlobalAudio();
+        // Resume context if suspended (browser policy)
+        if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
 
         try {
-            // ACOUSTIC ECHO CANCELLATION: Critical for PTT to prevent screeching
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    sampleRate: 16000 // Low bandwidth optimization
-                } 
-            });
-            
-            playTone(ctx, 'TX_START');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            playTone(audioCtxRef.current, 'TX_START');
             
             // Ultra-low bitrate for PTT efficiency over 4G
+            // Explicit fallback logic for iOS vs Android vs Desktop
             let options = {};
             if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-                options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
+                options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 12000 };
             } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                // iOS Safari
                 options = { mimeType: 'audio/mp4', audioBitsPerSecond: 16000 };
             } else if (MediaRecorder.isTypeSupported('audio/webm')) {
                 options = { mimeType: 'audio/webm' };
@@ -199,10 +163,11 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
                 reader.onloadend = () => {
                     const base64 = (reader.result as string).split(',')[1]; // Strip header
                     onSendAudio(base64, duration, blob.size);
-                    playTone(ctx, 'ROGER_BEEP');
+                    if (audioCtxRef.current) playTone(audioCtxRef.current, 'ROGER_BEEP');
                 };
                 reader.readAsDataURL(blob);
                 
+                // Cleanup tracks
                 stream.getTracks().forEach(t => t.stop());
             };
 
@@ -211,28 +176,25 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
             setDuration(0);
             timerRef.current = setInterval(() => setDuration(prev => prev + 1), 1000);
 
+            // Haptic Feedback
             if (navigator.vibrate) navigator.vibrate(50);
 
         } catch (e) {
             console.error("Mic Error", e);
-            alert("Mic Access Denied or Hardware Error");
-            setStatus('IDLE');
+            alert("Mic Access Denied");
         }
     };
 
     const stopTx = () => {
-        if (status === 'TX' && mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        if (status === 'TX' && mediaRecorderRef.current) {
             mediaRecorderRef.current.stop();
-            // Status update happens in 'onstop' indirectly via side effects, but we set IDLE here for UI responsiveness
-            // Actually, better to let onstop handle logic, but we must clear timer.
+            setStatus('IDLE');
             clearInterval(timerRef.current);
-            setStatus('IDLE'); 
             if (navigator.vibrate) navigator.vibrate([30, 30]);
-            
-            // Queue processing will auto-trigger via the useEffect on `status` change to IDLE
         }
     };
 
+    // Toggle handler for Tap-to-Talk
     const toggleTx = () => {
         if (status === 'IDLE') {
             startTx();
@@ -286,7 +248,7 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
                             <div className="flex flex-col items-center opacity-30">
                                 <Radio size={48} className="text-neutral-500 mb-2" />
                                 <span className="text-xl font-black text-neutral-500 tracking-widest">STANDBY</span>
-                                <span className="text-[10px] text-emerald-500/50 mt-2 font-mono">CHANNEL_OPEN</span>
+                                {audioQueue.length > 0 && <span className="text-[10px] text-amber-500 mt-2">{audioQueue.length} MSGS QUEUED</span>}
                             </div>
                         )}
                     </div>
@@ -304,7 +266,7 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
                         ${status === 'TX' 
                             ? 'bg-red-600 text-white scale-95 ring-4 ring-red-900 shadow-[0_0_30px_rgba(220,38,38,0.5)]' 
                             : 'bg-emerald-600 hover:bg-emerald-500 text-black ring-4 ring-emerald-900/50 hover:scale-105 active:scale-95'}
-                        ${status === 'RX' ? 'opacity-50 cursor-not-allowed grayscale' : ''}
+                        ${status === 'RX' ? 'opacity-50 cursor-not-allowed' : ''}
                     `}
                     onClick={toggleTx}
                     onTouchStart={(e) => { e.preventDefault(); startTx(); }}
@@ -315,14 +277,14 @@ export const IStokWalkieTalkie: React.FC<IStokWalkieTalkieProps> = ({ onClose, o
                 >
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
                     <span className="relative z-10 flex items-center justify-center gap-3">
-                        {status === 'TX' ? 'TRANSMITTING...' : (status === 'RX' ? 'CHANNEL BUSY' : 'HOLD TO TALK')}
+                        {status === 'TX' ? 'TRANSMITTING...' : 'HOLD TO TALK'}
                         <Activity size={24} className={status === 'TX' ? 'animate-pulse' : ''} />
                     </span>
                 </button>
 
                 <p className="text-[10px] text-neutral-500 font-mono text-center max-w-xs">
-                    MODE: HALF-DUPLEX (ANTI-FEEDBACK) <br/>
-                    {status === 'RX' ? 'INCOMING TRANSMISSION QUEUED' : 'PRESS AND HOLD TO TRANSMIT'}
+                    MODE: 12KBPS_OPUS // ENCRYPTION: AES-256-GCM <br/>
+                    LATENCY OPTIMIZED FOR WEAK SIGNALS
                 </p>
             </div>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { NeuralLinkService } from '../services/neuralLink';
 import type { NeuralLinkStatus, TranscriptionEvent, MicMode, AmbientMode } from '../services/neuralLink';
@@ -69,8 +70,7 @@ export const LiveSessionProvider: React.FC<LiveSessionProviderProps> = ({ childr
 
         try {
             const noteContext = notesRef.current.map(n => `- ${n.title} (ID: ${n.id})`).join('\n');
-            // Fix: Await getSystemInstruction and pass current Note[] correctly
-            const systemInstruction = await HANISAH_BRAIN.getSystemInstruction(persona, '', notesRef.current);
+            const systemInstruction = HANISAH_BRAIN.getSystemInstruction(persona, noteContext);
             const storedVoice = localStorage.getItem(`${persona}_voice`);
             const voice = storedVoice ? JSON.parse(storedVoice) : (persona === 'hanisah' ? 'Zephyr' : 'Fenrir');
 
@@ -122,7 +122,7 @@ export const LiveSessionProvider: React.FC<LiveSessionProviderProps> = ({ childr
             setIsLive(false);
             setStatus('ERROR');
         }
-    }, [isLive, micMode, ambientMode, setNotes]); // Added setNotes to dependencies for completeness
+    }, [isLive, micMode, ambientMode]); // notes removed from dependency array, using ref
 
     const stopSession = useCallback(() => {
         neuralLink.current.disconnect();

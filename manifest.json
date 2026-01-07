@@ -1,9 +1,8 @@
-
 {
-  "name": "IStoicAI v101.0",
+  "name": "IStoicAI v0.52",
   "short_name": "IStoicAI",
-  "description": "Sistem Produktivitas Personal berbasis Stoikisme & AI - Platinum Edition.",
-  "id": "istoic-ai-v101.0",
+  "description": "Sistem Produktivitas Personal berbasis Stoikisme & AI.",
+  "id": "istoic-ai-v0.52",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

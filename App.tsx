@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
@@ -10,7 +9,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import useLocalStorage from './hooks/useLocalStorage';
 import { useIDB } from './hooks/useIDB'; 
 import { useChatLogic } from './features/aiChat/hooks/useChatLogic';
-import { type Note, type IncomingConnection, type GlobalPeerState } from './types';
+import { type Note } from './types';
 import { DebugConsole } from './components/DebugConsole';
 import { debugService } from './services/debugService';
 import { KEY_MANAGER } from './services/geminiService';
@@ -23,10 +22,6 @@ import { AuthView } from './features/auth/AuthView';
 import { AppSelector } from './features/auth/AppSelector';
 import { GenerativeSessionProvider } from './contexts/GenerativeSessionContext';
 import { activatePrivacyShield } from './utils/privacyShield';
-import { useGlobalPeer } from './hooks/useGlobalPeer';
-import { ConnectionNotification } from './features/istok/components/ConnectionNotification';
-import { decryptData, encryptData } from './utils/crypto';
-import { IStokUserIdentity } from './features/istok/services/istokIdentity';
 
 // --- LAZY LOAD HEAVY MODULES ---
 const SmartNotesView = lazy(() => import('./features/smartNotes/SmartNotesView').then(module => ({ default: module.SmartNotesView })));
@@ -62,14 +57,11 @@ interface AppContentProps {
     notes: Note[];
     setNotes: (notes: Note[]) => void;
     onOpenTeleponan: () => void;
-    // Removed incomingRequest props as they are handled in App root now
 }
 
-const AppContent: React.FC<AppContentProps> = ({ 
-    notes, setNotes, onOpenTeleponan
-}) => {
+const AppContent: React.FC<AppContentProps> = ({ notes, setNotes, onOpenTeleponan }) => {
   const [activeFeature, setActiveFeature] = useState<FeatureID>('dashboard');
-  const [isTutorialComplete, setIsTutorialComplete] = useLocalStorage<boolean>('app_tutorial_complete_v101', false);
+  const [isTutorialComplete, setIsTutorialComplete] = useLocalStorage<boolean>('app_tutorial_complete', false);
   
   // REACTIVE SETTINGS
   const [theme] = useLocalStorage<string>('app_theme', 'cyan');
@@ -232,12 +224,7 @@ const AppContent: React.FC<AppContentProps> = ({
 
       <DebugConsole isOpen={isDebugOpen} onClose={() => setIsDebugOpen(false)} />
 
-      {!isTutorialComplete && (
-          <TutorialOverlay 
-            onComplete={() => setIsTutorialComplete(true)} 
-            onNavigate={setActiveFeature} 
-          />
-      )}
+      {!isTutorialComplete && <TutorialOverlay onComplete={() => setIsTutorialComplete(true)} />}
 
       <style>{`
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
@@ -252,52 +239,8 @@ type SessionMode = 'AUTH' | 'SELECT' | 'ISTOIC' | 'ISTOK' | 'TELEPONAN';
 const App: React.FC = () => {
     const [notes, setNotes] = useIDB<Note[]>('notes', []);
     const [sessionMode, setSessionMode] = useState<SessionMode>('AUTH');
-    const [identity] = useLocalStorage<IStokUserIdentity | null>('istok_user_identity', null);
     
     useIndexedDBSync(notes);
-
-    // --- GLOBAL PEER ENGINE ---
-    const { peer, incomingConnection, clearIncoming } = useGlobalPeer(identity);
-    
-    // --- GLOBAL CONNECTION HANDLER ---
-    const [acceptedConnection, setAcceptedConnection] = useState<IncomingConnection | null>(null);
-
-    // --- INCOMING REQUEST DATA PARSING ---
-    const [requestIdentity, setRequestIdentity] = useState<string>('');
-
-    useEffect(() => {
-        if (incomingConnection) {
-            // IMMEDIATE FEEDBACK: If no data yet, show loading
-            if (!incomingConnection.firstData) {
-                setRequestIdentity('ESTABLISHING LINK...');
-                return;
-            }
-  
-            const process = async () => {
-                const { firstData } = incomingConnection;
-                // Try basic pins + default '000000'
-                const payload = await decryptData(firstData.payload, '000000') || await decryptData(firstData.payload, '123456');
-                
-                if (payload) {
-                    try {
-                      const json = JSON.parse(payload);
-                      setRequestIdentity(json.identity || 'Unknown Agent');
-                    } catch(e) { setRequestIdentity('Encrypted Signal'); }
-                } else {
-                    setRequestIdentity('Encrypted Signal (PIN Required)');
-                }
-            };
-            process();
-        } else {
-            setRequestIdentity('');
-        }
-    }, [incomingConnection]);
-
-    const handleAcceptConnection = async (request: IncomingConnection) => {
-        setAcceptedConnection(request);
-        setSessionMode('ISTOK'); // Switch to IStok View
-        clearIncoming(); // Clear notification
-    };
 
     // ACTIVATE PRIVACY SHIELD GLOBALLY
     useEffect(() => {
@@ -346,11 +289,7 @@ const App: React.FC = () => {
         return (
             <Suspense fallback={<div className="h-screen w-screen bg-black flex items-center justify-center text-red-500 font-mono">INITIALIZING_SECURE_LAYER...</div>}>
                 <ErrorBoundary viewName="ISTOK_SECURE_CHANNEL">
-                    <IStokView 
-                        onLogout={() => setSessionMode('AUTH')} 
-                        globalPeer={peer} 
-                        initialAcceptedConnection={acceptedConnection}
-                    />
+                    <IStokView onLogout={() => setSessionMode('AUTH')} />
                 </ErrorBoundary>
             </Suspense>
         );
@@ -369,21 +308,6 @@ const App: React.FC = () => {
     return (
         <GenerativeSessionProvider>
             <LiveSessionProvider notes={notes} setNotes={setNotes}>
-                
-                {/* GLOBAL CONNECTION NOTIFICATION OVERLAY - ROOT LEVEL */}
-                {incomingConnection && (
-                    <ConnectionNotification 
-                        identity={requestIdentity}
-                        peerId={incomingConnection.conn.peer}
-                        onAccept={() => handleAcceptConnection(incomingConnection)}
-                        onDecline={() => { 
-                            incomingConnection.conn.close(); 
-                            clearIncoming(); 
-                        }}
-                        isProcessing={!incomingConnection.firstData} 
-                    />
-                )}
-
                 <AppContent 
                     notes={notes} 
                     setNotes={setNotes} 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import useLocalStorage from '../../hooks/useLocalStorage';
 import { 
@@ -153,8 +154,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
     // Prompt Editor State
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
     const [editPersona, setEditPersona] = useState<'hanisah' | 'stoic'>('hanisah');
-    // Fix: Add state to hold the pre-fetched prompt string
-    const [currentPromptToEdit, setCurrentPromptToEdit] = useState('');
 
     // UI State
     const [isSaving, setIsSaving] = useState(false);
@@ -207,14 +206,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
 
     const handleSavePrompt = (persona: 'hanisah' | 'stoic', val: string) => {
         localStorage.setItem(`${persona}_system_prompt`, val);
-    };
-
-    // Fix: Added async wrapper to prefetch prompt and avoid Promise in JSX prop
-    const handleOpenPromptEditor = async (persona: 'hanisah' | 'stoic') => {
-        setEditPersona(persona);
-        const prompt = await HANISAH_BRAIN.getSystemInstruction(persona);
-        setCurrentPromptToEdit(prompt);
-        setIsPromptModalOpen(true);
     };
 
     const handleBackup = async () => {
@@ -275,8 +266,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                 isOpen={isPromptModalOpen} 
                 onClose={() => setIsPromptModalOpen(false)}
                 persona={editPersona}
-                // Fix: Use the pre-fetched prompt string
-                currentPrompt={currentPromptToEdit}
+                currentPrompt={HANISAH_BRAIN.getSystemInstruction(editPersona)}
                 onSave={(val) => handleSavePrompt(editPersona, val)}
                 onReset={() => handleResetPrompt(editPersona)}
             />
@@ -284,6 +274,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-skin-border pb-6 shrink-0 gap-4">
                 <div className="w-full">
+                    {/* Fixed: Responsive Font Size and wrapping for small screens (XR) */}
                     <h1 className="text-3xl sm:text-4xl md:text-5xl font-black italic tracking-tighter uppercase break-words leading-[0.85]">
                         SYSTEM <span className="text-accent">CONFIG</span>
                     </h1>
@@ -343,7 +334,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                             </div>
                         </div>
 
-                        {/* ACCENT PALETTE */}
+                        {/* ACCENT PALETTE - RESTORED */}
                         <div className="space-y-3 col-span-1 md:col-span-2 border-t border-skin-border pt-4">
                             <label className="text-[9px] font-black text-skin-muted uppercase tracking-widest pl-1">NEURAL ACCENT (PALETTE)</label>
                             <div className="flex flex-wrap gap-3 p-3 bg-skin-surface rounded-xl border border-skin-border">
@@ -475,8 +466,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                     <ToolRow label="VISUAL CORTEX" desc="Image Generation & Vision" icon={<Layers size={14}/>} isActive={hanisahTools.visual} onToggle={() => setHanisahTools({...hanisahTools, visual: !hanisahTools.visual})} />
                                     <ToolRow label="WEB UPLINK" desc="Google Search Access" icon={<Globe size={14}/>} isActive={hanisahTools.search} onToggle={() => setHanisahTools({...hanisahTools, search: !hanisahTools.search})} />
                                 </div>
-                                {/* Fix: Use async prefetch handler */}
-                                <button onClick={() => handleOpenPromptEditor('hanisah')} className="w-full py-3 mt-2 border border-orange-500/20 text-orange-500 hover:bg-orange-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                                <button onClick={() => { setEditPersona('hanisah'); setIsPromptModalOpen(true); }} className="w-full py-3 mt-2 border border-orange-500/20 text-orange-500 hover:bg-orange-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
                                     <Edit3 size={12}/> EDIT SYSTEM PROMPT
                                 </button>
                             </div>
@@ -499,8 +489,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                         <div><div className="text-[10px] font-bold">VISUAL CORTEX</div><div className="text-[9px]">Disabled for Logic Core</div></div>
                                     </div>
                                 </div>
-                                {/* Fix: Use async prefetch handler */}
-                                <button onClick={() => handleOpenPromptEditor('stoic')} className="w-full py-3 mt-2 border border-cyan-500/20 text-cyan-500 hover:bg-cyan-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                                <button onClick={() => { setEditPersona('stoic'); setIsPromptModalOpen(true); }} className="w-full py-3 mt-2 border border-cyan-500/20 text-cyan-500 hover:bg-cyan-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
                                     <Edit3 size={12}/> EDIT SYSTEM PROMPT
                                 </button>
                             </div>

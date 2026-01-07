@@ -56,13 +56,13 @@ html {
 body {
   margin: 0;
   padding: 0;
-  /* Use 100dvh for proper mobile browser height handling (address bar awareness) */
+  /* Use 100dvh for proper mobile browser height handling */
   height: 100dvh; 
   width: 100vw;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  /* Prevent pull-to-refresh on mobile PWA */
+  /* Prevent pull-to-refresh */
   overscroll-behavior-y: none; 
   touch-action: manipulation;
   

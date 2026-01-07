@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 import { GLOBAL_VAULT, type Provider } from "./hydraVault"; 
@@ -113,8 +114,7 @@ export const runHanisahRace = async (message: string, imageData: any = null, his
   activeController = new AbortController();
   const signal = activeController.signal;
 
-  // Fix: Await getSystemInstruction call
-  const systemInstruction = await HANISAH_BRAIN.getSystemInstruction('hanisah');
+  const systemInstruction = HANISAH_BRAIN.getSystemInstruction('hanisah');
   
   const recentHistory = historyContext.slice(-12).map(h => ({
       role: h.role,
