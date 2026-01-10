@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import useLocalStorage from '../../hooks/useLocalStorage';
 import { 
     User, UserCheck, Database, Palette, Globe, Shield, 
@@ -29,7 +30,7 @@ const THEME_COLORS: Record<string, string> = {
   lime: '#CCFF00',
   purple: '#BF00FF',
   orange: '#FF5F00',
-  silver: '#94a3b8', // Slightly darker for visibility in selector
+  silver: '#94a3b8',
   blue: '#0066FF',
   green: '#00FF94',
   red: '#FF003C',
@@ -37,24 +38,24 @@ const THEME_COLORS: Record<string, string> = {
   gold: '#FFD700'
 };
 
-// --- SUB-COMPONENTS ---
+// --- OPTIMIZED SUB-COMPONENTS (Memoized) ---
 
-const SettingsSection: React.FC<{ title: string, icon: React.ReactNode, children: React.ReactNode, className?: string }> = ({ title, icon, children, className }) => (
-    <div className={`space-y-4 mb-8 ${className}`}>
+const SettingsSection: React.FC<{ title: string, icon: React.ReactNode, children: React.ReactNode, className?: string }> = memo(({ title, icon, children, className }) => (
+    <div className={`space-y-4 mb-8 ${className} content-visibility-auto`}>
         <div className="flex items-center gap-2 text-skin-muted px-2">
             {React.cloneElement(icon as React.ReactElement<any>, { size: 16 })}
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">{title}</h3>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-3 transform-gpu">
             {children}
         </div>
     </div>
-);
+));
 
-const ToolRow: React.FC<{ label: string, desc: string, icon: React.ReactNode, isActive: boolean, onToggle: () => void }> = ({ label, desc, icon, isActive, onToggle }) => (
+const ToolRow: React.FC<{ label: string, desc: string, icon: React.ReactNode, isActive: boolean, onToggle: () => void }> = memo(({ label, desc, icon, isActive, onToggle }) => (
     <button 
         onClick={onToggle}
-        className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isActive ? 'bg-skin-surface border-accent/30' : 'bg-transparent border-skin-border opacity-60'}`}
+        className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all active:scale-[0.98] ${isActive ? 'bg-skin-surface border-accent/30' : 'bg-transparent border-skin-border opacity-60'}`}
     >
         <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${isActive ? 'bg-accent/10 text-accent' : 'bg-skin-surface text-skin-muted'}`}>
@@ -67,9 +68,10 @@ const ToolRow: React.FC<{ label: string, desc: string, icon: React.ReactNode, is
         </div>
         {isActive ? <ToggleRight className="text-accent" size={20}/> : <ToggleLeft className="text-skin-muted" size={20}/>}
     </button>
-);
+));
 
-const ProviderToggleRow: React.FC<{ id: string, name: string, isVisible: boolean, onToggle: () => void }> = ({ id, name, isVisible, onToggle }) => {
+const ProviderToggleRow: React.FC<{ id: string, name: string, isVisible: boolean, onToggle: () => void }> = memo(({ id, name, isVisible, onToggle }) => {
+    // Memoize key check if possible, or accept prop. For now calling lightweight getter is fine.
     const hasKey = !!KEY_MANAGER.getKey(id);
     return (
         <div className="flex items-center justify-between p-3 bg-skin-card border border-skin-border rounded-xl">
@@ -80,12 +82,12 @@ const ProviderToggleRow: React.FC<{ id: string, name: string, isVisible: boolean
                     <div className="text-[8px] font-mono text-skin-muted">{hasKey ? 'CONNECTED' : 'MISSING_KEY'}</div>
                 </div>
             </div>
-            <button onClick={onToggle} disabled={!hasKey} className={`text-[9px] font-bold px-3 py-1 rounded-lg border transition-all ${isVisible ? 'bg-accent/10 text-accent border-accent/20' : 'bg-skin-surface text-skin-muted border-skin-border'}`}>
+            <button onClick={onToggle} disabled={!hasKey} className={`text-[9px] font-bold px-3 py-1 rounded-lg border transition-all active:scale-95 ${isVisible ? 'bg-accent/10 text-accent border-accent/20' : 'bg-skin-surface text-skin-muted border-skin-border'}`}>
                 {isVisible ? 'ACTIVE' : 'HIDDEN'}
             </button>
         </div>
     );
-};
+});
 
 const PromptEditorModal: React.FC<{ 
     isOpen: boolean, 
@@ -94,7 +96,7 @@ const PromptEditorModal: React.FC<{
     currentPrompt: string,
     onSave: (val: string) => void,
     onReset: () => void
-}> = ({ isOpen, onClose, persona, currentPrompt, onSave, onReset }) => {
+}> = memo(({ isOpen, onClose, persona, currentPrompt, onSave, onReset }) => {
     const [value, setValue] = useState(currentPrompt);
     
     useEffect(() => { setValue(currentPrompt); }, [currentPrompt]);
@@ -102,8 +104,8 @@ const PromptEditorModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[3000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div className="w-full max-w-2xl bg-skin-card border border-skin-border rounded-[24px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+        <div className="fixed inset-0 z-[3000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in will-change-opacity">
+            <div className="w-full max-w-2xl bg-skin-card border border-skin-border rounded-[24px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh] transform-gpu will-change-transform animate-slide-up">
                 <div className="p-4 border-b border-skin-border flex justify-between items-center bg-skin-surface">
                     <div className="flex items-center gap-2">
                         <Terminal size={16} className="text-accent"/>
@@ -127,11 +129,11 @@ const PromptEditorModal: React.FC<{
             </div>
         </div>
     );
-};
+});
 
 // --- MAIN VIEW ---
 
-const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
+const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
     // --- GLOBAL STATE ---
     const [localPersona, setLocalPersona] = useLocalStorage('user_persona_config', getUserPersona());
     const [appTheme, setAppTheme] = useLocalStorage('app_theme', 'cyan');
@@ -153,7 +155,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
     // Prompt Editor State
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
     const [editPersona, setEditPersona] = useState<'hanisah' | 'stoic'>('hanisah');
-    // Fix: Add state to hold the pre-fetched prompt string
     const [currentPromptToEdit, setCurrentPromptToEdit] = useState('');
 
     // UI State
@@ -173,13 +174,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
         BiometricService.isAvailable().then(setIsBioAvailable);
     }, []);
 
-    const handleSavePersona = () => {
+    const handleSavePersona = useCallback(() => {
         setIsSaving(true);
         debugService.logAction(UI_REGISTRY.SETTINGS_BTN_SAVE, FN_REGISTRY.SAVE_CONFIG, 'PERSONA_UPDATE');
         setTimeout(() => setIsSaving(false), 800);
-    };
+    }, []);
 
-    const handleAutoGenBio = async () => {
+    const handleAutoGenBio = useCallback(async () => {
         if(!localPersona.nama) return;
         setIsGeneratingBio(true);
         try {
@@ -188,9 +189,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             if (res.text) setLocalPersona(prev => ({ ...prev, bio: res.text!.trim() }));
         } catch(e) {}
         setIsGeneratingBio(false);
-    };
+    }, [localPersona.nama, currentLang, setLocalPersona]);
 
-    const handleToggleBio = async () => {
+    const handleToggleBio = useCallback(async () => {
         if (bioEnabled) {
             setBioEnabled(false);
         } else {
@@ -198,26 +199,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             if (success) setBioEnabled(true);
             else alert("Biometric registration failed.");
         }
-    };
+    }, [bioEnabled, setBioEnabled, identity]);
 
-    const handleResetPrompt = (persona: 'hanisah' | 'stoic') => {
+    const handleResetPrompt = useCallback((persona: 'hanisah' | 'stoic') => {
         localStorage.removeItem(`${persona}_system_prompt`);
         alert("System prompt reset to factory default.");
-    };
+    }, []);
 
-    const handleSavePrompt = (persona: 'hanisah' | 'stoic', val: string) => {
+    const handleSavePrompt = useCallback((persona: 'hanisah' | 'stoic', val: string) => {
         localStorage.setItem(`${persona}_system_prompt`, val);
-    };
+    }, []);
 
-    // Fix: Added async wrapper to prefetch prompt and avoid Promise in JSX prop
-    const handleOpenPromptEditor = async (persona: 'hanisah' | 'stoic') => {
+    const handleOpenPromptEditor = useCallback(async (persona: 'hanisah' | 'stoic') => {
         setEditPersona(persona);
         const prompt = await HANISAH_BRAIN.getSystemInstruction(persona);
         setCurrentPromptToEdit(prompt);
         setIsPromptModalOpen(true);
-    };
+    }, []);
 
-    const handleBackup = async () => {
+    const handleBackup = useCallback(async () => {
         try {
             const notes = await db.getAll('NOTES');
             const chats = await db.getAll('CHATS');
@@ -235,9 +235,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             a.click();
             URL.revokeObjectURL(url);
         } catch (e) { alert("Backup Failed"); }
-    };
+    }, [localPersona, hanisahTools, stoicTools]);
 
-    const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleRestore = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
@@ -252,9 +252,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             } catch (err) { alert("Invalid Backup File"); }
         };
         reader.readAsDataURL(file);
-    };
+    }, [setLocalPersona]);
     
-    const handleChangeId = async () => {
+    const handleChangeId = useCallback(async () => {
         if (!newCodenameInput || newCodenameInput.length < 3) { setIdUpdateMsg("Min 3 chars."); return; }
         if (!identity?.uid) { setIdUpdateMsg("No User UID."); return; }
         setIsSaving(true);
@@ -266,7 +266,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             }
         } catch (e: any) { setIdUpdateMsg(e.message); } 
         finally { setIsSaving(false); }
-    };
+    }, [newCodenameInput, identity]);
+
+    // Handlers for toggles to be used with useCallback to prevent re-renders of ToolRow
+    const toggleHanisahVault = useCallback(() => setHanisahTools(p => ({...p, vault: !p.vault})), [setHanisahTools]);
+    const toggleHanisahVisual = useCallback(() => setHanisahTools(p => ({...p, visual: !p.visual})), [setHanisahTools]);
+    const toggleHanisahSearch = useCallback(() => setHanisahTools(p => ({...p, search: !p.search})), [setHanisahTools]);
+    const toggleStoicVault = useCallback(() => setStoicTools(p => ({...p, vault: !p.vault})), [setStoicTools]);
+
+    const handleProviderToggle = useCallback((id: string) => {
+        setProviderVisibility(prev => ({ ...prev, [id]: !prev[id] }));
+    }, [setProviderVisibility]);
 
     return (
         <div className="h-full flex flex-col p-4 md:p-8 lg:p-12 pb-32 overflow-hidden font-sans animate-fade-in text-skin-text">
@@ -275,7 +285,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                 isOpen={isPromptModalOpen} 
                 onClose={() => setIsPromptModalOpen(false)}
                 persona={editPersona}
-                // Fix: Use the pre-fetched prompt string
                 currentPrompt={currentPromptToEdit}
                 onSave={(val) => handleSavePrompt(editPersona, val)}
                 onReset={() => handleResetPrompt(editPersona)}
@@ -294,7 +303,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                 <button 
                     onClick={handleSavePersona}
                     disabled={isSaving}
-                    className="px-6 py-3 bg-skin-text text-skin-card hover:bg-accent hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50 shrink-0"
+                    className="px-6 py-3 bg-skin-text text-skin-card hover:bg-accent hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50 shrink-0 transform-gpu"
                 >
                     {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? t.saved : t.save}
                 </button>
@@ -314,7 +323,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                     <button 
                                         key={mode}
                                         onClick={() => setColorScheme(mode as any)}
-                                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${colorScheme === mode ? 'bg-skin-card text-accent shadow-sm border border-skin-border' : 'text-skin-muted hover:text-skin-text'}`}
+                                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${colorScheme === mode ? 'bg-skin-card text-accent shadow-sm border border-skin-border' : 'text-skin-muted hover:text-skin-text'}`}
                                     >
                                         {mode === 'light' && <Sun size={12} />}
                                         {mode === 'dark' && <Moon size={12} />}
@@ -335,7 +344,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                     <button 
                                         key={lang}
                                         onClick={() => { setAppLanguage(lang); window.location.reload(); }}
-                                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${appLanguage === lang ? 'bg-skin-card text-accent shadow-sm border border-skin-border' : 'text-skin-muted hover:text-skin-text'}`}
+                                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${appLanguage === lang ? 'bg-skin-card text-accent shadow-sm border border-skin-border' : 'text-skin-muted hover:text-skin-text'}`}
                                     >
                                         {lang}
                                     </button>
@@ -351,7 +360,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                     <button
                                         key={key}
                                         onClick={() => setAppTheme(key)}
-                                        className={`relative w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${appTheme === key ? 'border-skin-text scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
+                                        className={`relative w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center transform hover:scale-110 active:scale-95 ${appTheme === key ? 'border-skin-text scale-110 shadow-lg' : 'border-transparent'}`}
                                         style={{ backgroundColor: color }}
                                         aria-label={`Select ${key} theme`}
                                     >
@@ -384,7 +393,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                             <span className="text-[9px] text-skin-muted font-mono">{identity?.email || 'Local Session'}</span>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsEditingId(true)} className="px-4 py-2 bg-skin-card rounded-xl text-[9px] font-bold border border-skin-border hover:border-emerald-500 hover:text-emerald-500 transition-all uppercase tracking-wider">
+                                    <button onClick={() => setIsEditingId(true)} className="px-4 py-2 bg-skin-card rounded-xl text-[9px] font-bold border border-skin-border hover:border-emerald-500 hover:text-emerald-500 transition-all uppercase tracking-wider active:scale-95">
                                         CHANGE ID
                                     </button>
                                 </div>
@@ -402,10 +411,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                                 autoFocus
                                             />
                                         </div>
-                                        <button onClick={handleChangeId} disabled={isSaving} className="px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all disabled:opacity-50">
+                                        <button onClick={handleChangeId} disabled={isSaving} className="px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 active:scale-95">
                                             {isSaving ? '...' : 'SAVE'}
                                         </button>
-                                        <button onClick={() => setIsEditingId(false)} className="px-3 bg-skin-card border border-skin-border rounded-xl text-skin-muted hover:text-skin-text transition-all">
+                                        <button onClick={() => setIsEditingId(false)} className="px-3 bg-skin-card border border-skin-border rounded-xl text-skin-muted hover:text-skin-text transition-all active:scale-95">
                                             <X size={16} />
                                         </button>
                                     </div>
@@ -451,10 +460,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                 <SettingsSection title="ASSISTANT_PERSONALITY" icon={<Brain size={18} />}>
                     <div className="p-6 bg-skin-card rounded-[24px] border border-skin-border">
                         <div className="flex bg-skin-surface p-1 rounded-xl border border-skin-border mb-6">
-                             <button onClick={() => setActiveConfigTab('HANISAH')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeConfigTab === 'HANISAH' ? 'bg-skin-card text-orange-500 shadow-sm' : 'text-skin-muted hover:text-skin-text'}`}>
+                             <button onClick={() => setActiveConfigTab('HANISAH')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${activeConfigTab === 'HANISAH' ? 'bg-skin-card text-orange-500 shadow-sm' : 'text-skin-muted hover:text-skin-text'}`}>
                                 <Zap size={12}/> HANISAH (CREATIVE)
                              </button>
-                             <button onClick={() => setActiveConfigTab('STOIC')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeConfigTab === 'STOIC' ? 'bg-skin-card text-cyan-500 shadow-sm' : 'text-skin-muted hover:text-skin-text'}`}>
+                             <button onClick={() => setActiveConfigTab('STOIC')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${activeConfigTab === 'STOIC' ? 'bg-skin-card text-cyan-500 shadow-sm' : 'text-skin-muted hover:text-skin-text'}`}>
                                 <Brain size={12}/> LOGIC CORE
                              </button>
                         </div>
@@ -471,12 +480,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-[9px] font-black text-skin-muted uppercase tracking-widest">CAPABILITIES</label>
-                                    <ToolRow label="VAULT ACCESS" desc="Allow reading/writing notes" icon={<Database size={14}/>} isActive={hanisahTools.vault} onToggle={() => setHanisahTools({...hanisahTools, vault: !hanisahTools.vault})} />
-                                    <ToolRow label="VISUAL CORTEX" desc="Image Generation & Vision" icon={<Layers size={14}/>} isActive={hanisahTools.visual} onToggle={() => setHanisahTools({...hanisahTools, visual: !hanisahTools.visual})} />
-                                    <ToolRow label="WEB UPLINK" desc="Google Search Access" icon={<Globe size={14}/>} isActive={hanisahTools.search} onToggle={() => setHanisahTools({...hanisahTools, search: !hanisahTools.search})} />
+                                    <ToolRow label="VAULT ACCESS" desc="Allow reading/writing notes" icon={<Database size={14}/>} isActive={hanisahTools.vault} onToggle={toggleHanisahVault} />
+                                    <ToolRow label="VISUAL CORTEX" desc="Image Generation & Vision" icon={<Layers size={14}/>} isActive={hanisahTools.visual} onToggle={toggleHanisahVisual} />
+                                    <ToolRow label="WEB UPLINK" desc="Google Search Access" icon={<Globe size={14}/>} isActive={hanisahTools.search} onToggle={toggleHanisahSearch} />
                                 </div>
-                                {/* Fix: Use async prefetch handler */}
-                                <button onClick={() => handleOpenPromptEditor('hanisah')} className="w-full py-3 mt-2 border border-orange-500/20 text-orange-500 hover:bg-orange-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                                <button onClick={() => handleOpenPromptEditor('hanisah')} className="w-full py-3 mt-2 border border-orange-500/20 text-orange-500 hover:bg-orange-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95">
                                     <Edit3 size={12}/> EDIT SYSTEM PROMPT
                                 </button>
                             </div>
@@ -493,14 +501,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-[9px] font-black text-skin-muted uppercase tracking-widest">CAPABILITIES</label>
-                                    <ToolRow label="VAULT ACCESS" desc="Allow reading/writing notes" icon={<Database size={14}/>} isActive={stoicTools.vault} onToggle={() => setStoicTools({...stoicTools, vault: !stoicTools.vault})} />
+                                    <ToolRow label="VAULT ACCESS" desc="Allow reading/writing notes" icon={<Database size={14}/>} isActive={stoicTools.vault} onToggle={toggleStoicVault} />
                                     <div className="p-3 rounded-xl border border-skin-border bg-skin-surface opacity-50 flex items-center gap-3">
                                         <div className="p-2 bg-skin-card rounded-lg text-skin-muted"><Layers size={14}/></div>
                                         <div><div className="text-[10px] font-bold">VISUAL CORTEX</div><div className="text-[9px]">Disabled for Logic Core</div></div>
                                     </div>
                                 </div>
-                                {/* Fix: Use async prefetch handler */}
-                                <button onClick={() => handleOpenPromptEditor('stoic')} className="w-full py-3 mt-2 border border-cyan-500/20 text-cyan-500 hover:bg-cyan-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                                <button onClick={() => handleOpenPromptEditor('stoic')} className="w-full py-3 mt-2 border border-cyan-500/20 text-cyan-500 hover:bg-cyan-500/10 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95">
                                     <Edit3 size={12}/> EDIT SYSTEM PROMPT
                                 </button>
                             </div>
@@ -517,7 +524,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                 id={p} 
                                 name={p} 
                                 isVisible={providerVisibility[p] !== false}
-                                onToggle={() => setProviderVisibility(prev => ({ ...prev, [p]: !prev[p] }))}
+                                onToggle={() => handleProviderToggle(p)}
                             />
                         ))}
                     </div>
@@ -534,13 +541,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                                     <div className="text-[9px] text-skin-muted">SHA-256 ENCRYPTED</div>
                                 </div>
                             </div>
-                            <button className="text-[9px] font-bold px-4 py-2 bg-skin-card border border-skin-border rounded-lg hover:border-accent/50 transition-all">RESET PIN</button>
+                            <button className="text-[9px] font-bold px-4 py-2 bg-skin-card border border-skin-border rounded-lg hover:border-accent/50 transition-all active:scale-95">RESET PIN</button>
                         </div>
 
                         {isBioAvailable && (
                             <button 
                                 onClick={handleToggleBio}
-                                className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${bioEnabled ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-skin-surface border-skin-border'}`}
+                                className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all active:scale-[0.98] ${bioEnabled ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-skin-surface border-skin-border'}`}
                             >
                                 <div className="flex items-center gap-3">
                                     <div className={`p-2 rounded-lg ${bioEnabled ? 'bg-emerald-500 text-white' : 'bg-skin-card text-skin-muted'}`}>
@@ -560,7 +567,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                 {/* 6. DATA GOVERNANCE */}
                 <SettingsSection title={t.data_title || "DATA GOVERNANCE"} icon={<Database size={18} />}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button onClick={handleBackup} className="p-4 bg-skin-card border border-skin-border hover:border-blue-500/50 rounded-2xl flex items-center gap-3 group transition-all">
+                        <button onClick={handleBackup} className="p-4 bg-skin-card border border-skin-border hover:border-blue-500/50 rounded-2xl flex items-center gap-3 group transition-all active:scale-95">
                             <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg group-hover:bg-blue-500 group-hover:text-white transition-colors"><Download size={18}/></div>
                             <div className="text-left">
                                 <h4 className="text-[10px] font-black text-skin-text uppercase tracking-widest">{t.backup}</h4>
@@ -568,7 +575,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                             </div>
                         </button>
 
-                        <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-skin-card border border-skin-border hover:border-emerald-500/50 rounded-2xl flex items-center gap-3 group transition-all">
+                        <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-skin-card border border-skin-border hover:border-emerald-500/50 rounded-2xl flex items-center gap-3 group transition-all active:scale-95">
                             <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-lg group-hover:bg-emerald-500 group-hover:text-white transition-colors"><Upload size={18}/></div>
                             <div className="text-left">
                                 <h4 className="text-[10px] font-black text-skin-text uppercase tracking-widest">{t.restore}</h4>
@@ -577,7 +584,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
                             <input type="file" ref={fileInputRef} className="hidden" accept="application/json" onChange={handleRestore} />
                         </button>
 
-                        <button onClick={onNavigate.bind(null, 'system')} className="w-full p-4 bg-skin-surface hover:bg-skin-surface-hover border border-skin-border rounded-2xl flex items-center gap-3 group transition-all md:col-span-2">
+                        <button onClick={onNavigate.bind(null, 'system')} className="w-full p-4 bg-skin-surface hover:bg-skin-surface-hover border border-skin-border rounded-2xl flex items-center gap-3 group transition-all md:col-span-2 active:scale-[0.98]">
                              <div className="p-2.5 bg-skin-card text-skin-text rounded-lg"><Activity size={18}/></div>
                              <div className="text-left">
                                 <h4 className="text-[10px] font-black text-skin-text uppercase tracking-widest">SYSTEM DIAGNOSTICS</h4>
@@ -590,6 +597,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate }) => {
             </div>
         </div>
     );
-};
+});
 
 export default SettingsView;

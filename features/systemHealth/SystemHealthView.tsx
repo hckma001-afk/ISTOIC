@@ -118,7 +118,6 @@ export const SystemHealthView: React.FC = () => {
             
             const prompt = `[ROLE: HANISAH_SYSTEM_MECHANIC]\nAnalisa data telemetri (CPU, RAM, Latency).\nBerikan laporan performa sistem gaya Cyberpunk.\n\n[RAW_DATA]\n${toolResultJson}\n\nFORMAT:\n1. **SYSTEM INTEGRITY**: (SCORE %)\n2. **METRICS SUMMARY**: (CPU/Mem/Net Status)\n3. **ANOMALIES**: (List - be specific)\n4. **OPTIMIZATION**: (Actionable steps)`;
             
-            // Fix: Pass empty array for contextNotes (3rd arg) to satisfy Note[] type
             const response = await HANISAH_KERNEL.execute(prompt, 'gemini-3-flash-preview', []);
             setHanisahDiagnosis(response.text || "Diagnostic matrix failed to render.");
             debugService.log('INFO', 'MECHANIC', 'SCAN_COMPLETE', 'Diagnosis generated successfully.');
@@ -152,12 +151,12 @@ export const SystemHealthView: React.FC = () => {
             setHealth(debugService.getSystemHealth());
             setProviders(KEY_MANAGER.getAllProviderStatuses());
             
-            // Start Interval - INCREASED TO 3000ms for battery saving
+            // Start Interval - INCREASED TO 5000ms for battery saving
             diagInterval = setInterval(() => {
                 setHealth(debugService.getSystemHealth());
                 setProviders(KEY_MANAGER.getAllProviderStatuses());
                 calcStorage();
-            }, 3000);
+            }, 5000);
         }
 
         return () => { 

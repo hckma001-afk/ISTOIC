@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { type FeatureID, FEATURES } from '../constants';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { Settings, Flame, Cpu, Activity, AlertTriangle, PanelLeftClose, ChevronRight, Command, PanelLeft } from 'lucide-react';
@@ -42,6 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setIsExpanded]);
 
+  // Reduced Polling Frequency for Health Check to save CPU
   useEffect(() => {
       if (!features.AUTO_DIAGNOSTICS) {
           setHealthScore(0);
@@ -65,7 +66,8 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
       };
 
       checkHealth();
-      const interval = setInterval(checkHealth, 3000);
+      // Increase interval to 5000ms to reduce main thread load
+      const interval = setInterval(checkHealth, 5000);
       const unsubscribe = debugService.subscribeUI((state) => setUiMatrix(state));
       
       return () => { 
@@ -74,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
       };
   }, [features.AUTO_DIAGNOSTICS]);
   
-  const getLabel = (id: string) => {
+  const getLabel = useCallback((id: string) => {
       const keyMap: Record<string, string> = {
           dashboard: 'dashboard',
           notes: 'notes',
@@ -87,17 +89,21 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
       const transKey = keyMap[id];
       if (id === 'raw') return "RAW_MODE";
       return transKey ? getText('sidebar', transKey) : id.toUpperCase();
-  };
+  }, []);
 
-  const handleNavClick = (id: FeatureID, uiId: string) => {
+  const handleNavClick = useCallback((id: FeatureID, uiId: string) => {
+      // Direct call to avoid re-render overhead inside logAction if possible
       if (debugService.logAction(uiId as any, FN_REGISTRY.NAVIGATE_TO_FEATURE, id)) {
           setActiveFeature(id);
       }
-  };
+  }, [setActiveFeature]);
+
+  // CSS for GPU Acceleration
+  const transitionClass = "transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform transform-gpu";
 
   return (
     <>
-      {/* 1. DYNAMIC SPACER (Invisible but crucial for layout flow) */}
+      {/* 1. DYNAMIC SPACER */}
       <div 
         className={`
             hidden md:block h-full flex-none shrink-0 
@@ -110,19 +116,19 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
       <aside 
         className={`
           hidden md:flex flex-col fixed top-0 left-0 bottom-0 z-[1200] 
-          /* VISUALS: Glassmorphism & Borders */
           bg-skin-card/90 backdrop-blur-2xl 
           border-r border-skin-border
-          /* MOTION: Hyper-smooth Bezier */
-          transition-[width,transform,opacity,box-shadow] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]
-          ${isExpanded ? 'w-[280px] shadow-[20px_0_50px_-10px_rgba(0,0,0,0.15)] dark:shadow-[20px_0_50px_-10px_rgba(0,0,0,0.4)]' : 'w-[88px]'}
-          ${isForcedStealth ? 'opacity-0 pointer-events-none -translate-x-10' : 'opacity-100 translate-x-0'}
+          ${transitionClass}
+          ${isExpanded 
+              ? 'w-[280px] shadow-[20px_0_50px_-10px_rgba(0,0,0,0.15)] dark:shadow-[20px_0_50px_-10px_rgba(0,0,0,0.4)] translate-x-0' 
+              : 'w-[88px] translate-x-0'}
+          ${isForcedStealth ? 'opacity-0 pointer-events-none -translate-x-10' : 'opacity-100'}
         `}
         aria-label="Main Navigation"
       >
         <div className="flex flex-col h-full w-full overflow-hidden py-6 pt-safe pb-safe relative">
           
-          {/* Ambient Glow Gradient (Subtle top light) */}
+          {/* Ambient Glow Gradient */}
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-accent/5 to-transparent pointer-events-none" />
 
           {/* === LOGO & BRANDING === */}
@@ -146,28 +152,25 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                     </div>
                   </button>
 
-                  {/* Collapse Button (Only visible when expanded) */}
                   <div className={`transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                       <button 
                         onClick={() => setIsExpanded(false)}
-                        className="p-2 rounded-xl text-skin-muted hover:text-skin-text hover:bg-skin-surface active:scale-90 transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                        className="p-2 rounded-xl text-skin-muted hover:text-skin-text hover:bg-skin-surface active:scale-90 transition-all outline-none"
                       >
                           <PanelLeftClose size={18} />
                       </button>
                   </div>
               </div>
 
-              {/* Expand Button (Only visible when collapsed) */}
               <div className={`absolute top-0 right-0 left-0 flex justify-center transition-all duration-300 ${!isExpanded ? 'opacity-100 translate-y-14' : 'opacity-0 pointer-events-none translate-y-10'}`}>
                    <button 
                     onClick={() => setIsExpanded(true)}
-                    className="p-2 rounded-xl text-skin-muted hover:text-accent hover:bg-accent/5 active:scale-90 transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                    className="p-2 rounded-xl text-skin-muted hover:text-accent hover:bg-accent/5 active:scale-90 transition-all outline-none"
                   >
                       <PanelLeft size={20} strokeWidth={2} />
                   </button>
               </div>
 
-              {/* Branding Text */}
               <div className={`mt-5 overflow-hidden whitespace-nowrap transition-all duration-500 ease-out flex flex-col ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none'}`}>
                   <h1 className="text-lg font-black tracking-tighter text-skin-text leading-none uppercase flex items-center gap-2">
                     ISTOIC <span className="text-accent">TITANIUM</span> 
@@ -204,7 +207,6 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                   `}
                   title={!isExpanded ? label : undefined}
                 >
-                  {/* Active Glow Backdrop */}
                   {isActive && !isDisabled && (
                       <div className="absolute inset-0 bg-accent/5 blur-md rounded-[18px] opacity-50"></div>
                   )}
@@ -220,7 +222,6 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                     }
                   </div>
 
-                  {/* Label with Staggered Fade */}
                   <div className={`
                     overflow-hidden whitespace-nowrap transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] 
                     flex-1 flex justify-between items-center
@@ -260,7 +261,6 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                             </span>
                             <span className={`font-mono ${healthScore < 80 ? 'text-red-500' : 'text-emerald-500'}`}>{healthScore}%</span>
                         </div>
-                        {/* Custom Progress Bar */}
                         <div className="w-full h-1.5 bg-skin-main rounded-full overflow-hidden relative z-10">
                             <div 
                                 className={`h-full ${features.AUTO_DIAGNOSTICS ? healthColor : 'bg-neutral-600'} transition-all duration-1000 ease-out rounded-full`} 
