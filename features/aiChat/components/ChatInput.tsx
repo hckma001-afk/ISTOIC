@@ -4,6 +4,7 @@ import { Send, Plus, Loader2, Mic, MicOff, Database, DatabaseZap, Paperclip, X, 
 import { TRANSLATIONS, getLang } from '../../../services/i18n';
 import { debugService } from '../../../services/debugService';
 import { UI_REGISTRY, FN_REGISTRY } from '../../../constants/registry';
+import { optimizeImageForAI } from '../../../utils/imageOptimizer';
 
 interface ChatInputProps {
   input: string;
@@ -48,7 +49,8 @@ export const ChatInput: React.FC<ChatInputProps> = memo(({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDictating, setIsDictating] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [attachment, setAttachment] = useState<{ file: File, preview: string, base64: string } | null>(null);
+  // Optimized Attachment State with mimeType
+  const [attachment, setAttachment] = useState<{ file?: File, preview: string, base64: string, mimeType: string } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [pasteFlash, setPasteFlash] = useState(false);
   
@@ -179,19 +181,26 @@ export const ChatInput: React.FC<ChatInputProps> = memo(({
     }
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
       if (!file.type.startsWith('image/')) {
           alert("Only images supported.");
           return;
       }
       
-      const reader = new FileReader();
-      reader.onload = (e) => {
-          const result = e.target?.result as string;
-          const base64 = result.split(',')[1];
-          setAttachment({ file, preview: result, base64 });
-      };
-      reader.readAsDataURL(file);
+      try {
+          // Client-side Compression
+          const { base64, mimeType } = await optimizeImageForAI(file);
+          
+          setAttachment({ 
+              file, 
+              preview: `data:${mimeType};base64,${base64}`, 
+              base64,
+              mimeType 
+          });
+      } catch (e) {
+          console.error("Image processing error", e);
+          alert("Failed to process image. Please try another file.");
+      }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,7 +238,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(({
 
       debugService.logAction(UI_REGISTRY.CHAT_INPUT_SEND, FN_REGISTRY.CHAT_SEND_MESSAGE, 'SUBMIT');
 
-      const attachmentPayload = attachment ? { data: attachment.base64, mimeType: attachment.file.type } : undefined;
+      const attachmentPayload = attachment ? { data: attachment.base64, mimeType: attachment.mimeType } : undefined;
       onSubmit(undefined, attachmentPayload);
       setAttachment(null);
       // Reset height
@@ -303,6 +312,9 @@ export const ChatInput: React.FC<ChatInputProps> = memo(({
                     >
                         <X size={10} />
                     </button>
+                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/50 backdrop-blur text-[8px] text-white font-mono uppercase border border-white/10">
+                        {attachment.mimeType.split('/')[1]}
+                    </div>
                 </div>
             </div>
         )}

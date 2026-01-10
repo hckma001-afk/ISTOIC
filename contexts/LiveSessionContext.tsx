@@ -72,15 +72,29 @@ export const LiveSessionProvider: React.FC<LiveSessionProviderProps> = ({ childr
         setStatus('CONNECTING');
 
         try {
-            const systemInstruction = await HANISAH_BRAIN.getSystemInstruction(persona, '', notesRef.current);
+            // Get base system instruction
+            const baseInstruction = await HANISAH_BRAIN.getSystemInstruction(persona, '', notesRef.current);
+            
+            // Augment for Live Capabilities (Singing, Genius Mode)
+            const liveInstruction = `
+            ${baseInstruction}
+            
+            [LIVE_MODE_ACTIVATED]
+            You are currently operating in a real-time voice environment.
+            1. **GENIUS MODE**: You have access to 'googleSearch'. USE IT for any question about current events, news, or complex topics.
+            2. **PERFORMER MODE**: You are capable of singing. If asked to sing, generate the audio with rhythmic cadence, melody, and emotion. Do not just read lyrics. Perform them.
+            3. **FULL CONTROL**: You can manage notes (create, read, update) using 'manage_note'.
+            4. **CONCISENESS**: Keep spoken responses natural and relatively concise unless explaining a complex topic.
+            `;
+
             const storedVoice = localStorage.getItem(`${persona}_voice`);
             const voice = storedVoice ? JSON.parse(storedVoice) : (persona === 'hanisah' ? 'Zephyr' : 'Fenrir');
             setCurrentVoice(voice);
 
             await neuralLink.current.connect({
-                modelId: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                modelId: 'gemini-2.5-flash-native-audio-preview-12-2025',
                 persona,
-                systemInstruction,
+                systemInstruction: liveInstruction,
                 voiceName: voice,
                 onStatusChange: (newStatus, err) => {
                     setStatus(newStatus);

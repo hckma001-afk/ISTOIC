@@ -192,8 +192,9 @@ export class NeuralLinkService {
             config.voiceName = config.persona === 'hanisah' ? 'Kore' : 'Fenrir';
         }
 
-        // 5. Prepare Tools
+        // 5. Prepare Tools (Including Search & Notes)
         const liveTools = [
+            { googleSearch: {} }, // Enable Deep Search
             { 
                 functionDeclarations: [
                     ...(noteTools.functionDeclarations || []),
@@ -202,9 +203,9 @@ export class NeuralLinkService {
             }
         ];
 
-        // 6. Connect to Gemini Live
+        // 6. Connect to Gemini Live (Using Latest Model)
         const sessionPromise = ai.live.connect({
-            model: config.modelId || 'gemini-2.5-flash-native-audio-preview-09-2025',
+            model: 'gemini-2.5-flash-native-audio-preview-12-2025',
             callbacks: {
                 onopen: () => {
                     this.isConnecting = false;
@@ -213,6 +214,7 @@ export class NeuralLinkService {
                     
                     this.startAudioInputStream(sessionPromise);
                     
+                    // Keep audio context alive
                     this.audioCheckInterval = setInterval(() => {
                         if (this.outputCtx?.state === 'suspended') this.outputCtx.resume();
                         if (this.inputCtx?.state === 'suspended') this.inputCtx.resume();
@@ -222,8 +224,8 @@ export class NeuralLinkService {
                     sessionPromise.then(session => {
                         try {
                             const greeting = config.persona === 'hanisah' 
-                            ? "System online. Hai, aku siap."
-                            : "Logic core active. Ready.";
+                            ? "System online. Hai, aku siap. Lakukan deep search atau manajemen catatan jika diminta."
+                            : "Logic core active. Ready for complex analysis and data retrieval.";
                             session.sendRealtimeInput({ text: greeting });
                         } catch(err) { console.error(err); }
                     });
@@ -262,18 +264,14 @@ export class NeuralLinkService {
         
         // Gemini Live doesn't support hot-swapping config mid-session yet.
         // We must perform a fast-reconnect.
-        
-        // 1. Close current session gracefully (but keep audio context/stream alive)
         try {
             if (this.session && typeof this.session.close === 'function') {
                 this.session.close();
             }
         } catch (e) {}
 
-        // 2. Update config
         this.config.voiceName = newVoice;
         
-        // 3. Re-initialize (skips mic/context teardown to be fast)
         try {
             await this.initializeSession(this.config);
         } catch (e) {
@@ -342,7 +340,7 @@ export class NeuralLinkService {
             this.scriptProcessor.onaudioprocess = (e) => {
                 const inputData = e.inputBuffer.getChannelData(0);
                 
-                // VAD Gate
+                // VAD Gate (Prevent silence spam)
                 let sum = 0;
                 for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
                 const rms = Math.sqrt(sum / inputData.length);
@@ -373,6 +371,7 @@ export class NeuralLinkService {
     private async handleServerMessage(msg: LiveServerMessage, sessionPromise: Promise<any>) {
         if (!this.isConnected) return;
 
+        // 1. Transcription Handling
         if (this.config?.onTranscription) {
             if (msg.serverContent?.inputTranscription) {
                 this.config.onTranscription({ 
@@ -390,11 +389,13 @@ export class NeuralLinkService {
             }
         }
 
+        // 2. Tool Execution
         if (msg.toolCall) {
             for (const fc of msg.toolCall.functionCalls) {
                 if (this.config?.onToolCall) {
                     try {
                         const result = await this.config.onToolCall(fc);
+                        // CRITICAL: Send Response back to Model to Unfreeze it
                         sessionPromise.then(s => s.sendToolResponse({ 
                             functionResponses: [{ id: fc.id, name: fc.name, response: { result: String(result) } }] 
                         }));
@@ -407,10 +408,11 @@ export class NeuralLinkService {
             }
         }
 
+        // 3. Audio Playback
         const base64Audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
         if (base64Audio && this.outputCtx) {
             try {
-                // Ensure context is running for playback
+                // Ensure context is running for playback (iOS Safari fix)
                 if (this.outputCtx.state === 'suspended') await this.outputCtx.resume();
 
                 const currentTime = this.outputCtx.currentTime;

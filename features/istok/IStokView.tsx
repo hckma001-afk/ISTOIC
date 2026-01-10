@@ -23,6 +23,7 @@ import { compressImage } from './components/gambar';
 import { IStokUserIdentity } from './services/istokIdentity';
 import { IStokInput } from './components/IStokInput'; 
 import { OMNI_KERNEL } from '../../services/omniRace'; 
+import { TranslationService } from '../../services/translationService'; // Added
 
 // --- CONSTANTS ---
 const CHUNK_SIZE = 1024 * 64; // 64KB
@@ -613,9 +614,20 @@ export const IStokView: React.FC<IStokViewProps> = ({ onLogout, globalPeer, init
         } catch (e) { return userDraft; } finally { setIsAiThinking(false); }
     };
 
+    // Modified Translation Handler to Prioritize DeepL
     const handleTranslation = async (text: string, targetLang: string): Promise<string> => {
         setIsAiThinking(true);
         try {
+            // Priority 1: DeepL (High Accuracy)
+            if (TranslationService.isDeepLAvailable()) {
+                try {
+                    return await TranslationService.translate(text, targetLang);
+                } catch (deeplErr) {
+                    console.warn("DeepL failed, falling back to OmniRace", deeplErr);
+                }
+            }
+
+            // Priority 2: OmniRace (LLM Fallback)
             const prompt = `Translate to ${targetLang}: "${text}". OUTPUT ONLY TRANSLATION.`;
             const stream = OMNI_KERNEL.raceStream(prompt);
             let result = "";

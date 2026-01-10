@@ -1,9 +1,13 @@
 
-// ... (imports remain)
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { editImage } from '../../../services/geminiService';
 import { analyzeMultiModalMedia } from '../../../services/providerEngine';
-import { Camera, Layout, Trash2, X, Aperture, Image as ImageIcon, AlertCircle, ScanEye, Mic, Copy, Volume2 } from 'lucide-react';
+import { 
+    Camera, Layout, Trash2, X, Aperture, Image as ImageIcon, 
+    AlertCircle, ScanEye, Mic, Copy, Volume2, Upload, 
+    Maximize2, Wand2, RefreshCw, Layers, Box, Check, ArrowRight,
+    Zap, Monitor
+} from 'lucide-react';
 import Markdown from 'react-markdown';
 import { ToolGroup } from './ToolGroup';
 import { useAIProvider } from '../../../hooks/useAIProvider';
@@ -12,7 +16,7 @@ import { UI_REGISTRY, FN_REGISTRY } from '../../../constants/registry';
 import { debugService } from '../../../services/debugService';
 import { speakWithHanisah } from '../../../services/elevenLabsService';
 import { useGenerativeSession } from '../../../contexts/GenerativeSessionContext';
-import { optimizeImageForAI } from '../../../utils/imageOptimizer'; // IMPORT OPTIMIZER
+import { optimizeImageForAI } from '../../../utils/imageOptimizer';
 
 interface NeuralVisionProps {
     isOpen: boolean;
@@ -20,8 +24,57 @@ interface NeuralVisionProps {
     icon: React.ReactNode;
 }
 
+const PROVIDERS: ProviderGroup[] = [
+    { 
+        id: 'GEMINI', 
+        name: 'Google Gemini', 
+        models: [
+            { 
+                id: 'gemini-3-flash-preview', 
+                name: 'Gemini 3 Flash',
+                description: 'Fastest multimodal analysis. Best for real-time.',
+                tags: ['FREE', 'FAST'],
+                specs: { speed: 'INSTANT', quality: 'STD' }
+            },
+            { 
+                id: 'gemini-3-pro-preview', 
+                name: 'Gemini 3 Pro',
+                description: 'Deep reasoning on complex visual data.',
+                tags: ['PRO', 'DEEP'],
+                specs: { speed: 'FAST', quality: 'ULTRA' }
+            }
+        ]
+    },
+    { 
+        id: 'GROQ', 
+        name: 'Groq Llama', 
+        models: [
+            { 
+                id: 'llama-3.2-90b-vision-preview', 
+                name: 'Llama 3.2 90B',
+                description: 'Open source vision model on LPU.',
+                tags: ['OPEN', 'FAST'],
+                specs: { speed: 'INSTANT', quality: 'HD' }
+            }
+        ]
+    },
+    { 
+        id: 'OPENAI', 
+        name: 'OpenAI', 
+        models: [
+            { 
+                id: 'gpt-4o', 
+                name: 'GPT-4o Omni',
+                description: 'Industry standard for visual understanding.',
+                tags: ['PRO', 'SMART'],
+                specs: { speed: 'FAST', quality: 'ULTRA' }
+            }
+        ]
+    }
+];
+
 export const NeuralVision: React.FC<NeuralVisionProps> = ({ isOpen, onToggle, icon }) => {
-    // CONNECT TO GLOBAL SESSION CONTEXT
+    // --- GLOBAL SESSION STATE ---
     const {
         visionPrompt: prompt, setVisionPrompt: setPrompt,
         visionResult: analysisResult, setVisionResult: setAnalysisResult,
@@ -31,96 +84,67 @@ export const NeuralVision: React.FC<NeuralVisionProps> = ({ isOpen, onToggle, ic
         visionEditResult: editResult, setVisionEditResult: setEditResult,
         visionProvider: selectedProvider, setVisionProvider: setSelectedProvider,
         visionModel: selectedModel, setVisionModel: setSelectedModel,
-        statusMsg, setStatusMsg // Reuse status msg logic from context or local? Context doesn't have vision specific msg yet, reuse generic or local
     } = useGenerativeSession();
 
-    // Local status message state to avoid conflict with Gen Studio
-    const [localStatusMsg, setLocalStatusMsg] = React.useState<string | null>(null);
+    // --- LOCAL STATE ---
+    const [localStatus, setLocalStatus] = useState<string | null>(null);
+    const [isCameraActive, setIsCameraActive] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
+    
+    // --- REFS ---
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { isHealthy, status: providerStatus } = useAIProvider(selectedProvider);
 
-    // Camera State (Ephemeral)
-    const [isCameraActive, setIsCameraActive] = React.useState(false);
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const editInputRef = useRef<HTMLInputElement>(null);
-
+    // --- EFFECTS ---
     useEffect(() => {
-        if (!loading) return;
-        const messages = loading === 'ANALYZE' ? [
-            "SCANNING NEURAL MAPS...", "DECODING VISUAL DATA...", "IDENTIFYING ENTITIES...", "CONTEXTUAL MAPPING...", "GENERATING INSIGHTS..."
-        ] : [
-            "MORPHING VISUAL KERNEL...", "RECONSTRUCTING DATA...", "APPLYING TRANSFORMS...", "PIXEL REGENERATION...", "INTEGRITY CHECK..."
-        ];
-
-        let msgIdx = 0;
-        setLocalStatusMsg(messages[0]);
+        if (!loading) { setLocalStatus(null); return; }
+        const msgs = loading === 'ANALYZE' 
+            ? ["DECODING PIXELS...", "MAPPING VECTORS...", "SEMANTIC MATCHING...", "SYNTHESIZING OUTPUT..."]
+            : ["UPLOADING ASSET...", "APPLYING TRANSFORM...", "RENDERING PIXELS...", "FINALIZING..."];
+        
+        let i = 0;
+        setLocalStatus(msgs[0]);
         const interval = setInterval(() => {
-            msgIdx = (msgIdx + 1) % messages.length;
-            setLocalStatusMsg(messages[msgIdx]);
-        }, 3000);
+            i = (i + 1) % msgs.length;
+            setLocalStatus(msgs[i]);
+        }, 1500);
         return () => clearInterval(interval);
     }, [loading]);
 
-    // ... (Camera and other logics remain)
-    
-    // Attach stream to video element when camera is active
     useEffect(() => {
         if (isCameraActive && videoRef.current && streamRef.current) {
             videoRef.current.srcObject = streamRef.current;
         }
     }, [isCameraActive]);
 
-    const providers: ProviderGroup[] = [
-        { 
-            id: 'GEMINI', 
-            name: 'Google Gemini', 
-            models: [
-                { 
-                    id: 'gemini-3-flash-preview', 
-                    name: 'Gemini 3 Flash',
-                    description: 'Fast multimodal analysis. Ideal for general recognition.',
-                    tags: ['FREE', 'FAST'],
-                    specs: { speed: 'INSTANT', quality: 'STD' }
-                },
-                { 
-                    id: 'gemini-3-pro-preview', 
-                    name: 'Gemini 3 Pro',
-                    description: 'Complex reasoning over visual inputs.',
-                    tags: ['PRO', 'REASONING'],
-                    specs: { speed: 'FAST', quality: 'ULTRA' }
-                }
-            ]
-        },
-        { 
-            id: 'GROQ', 
-            name: 'Groq (Llama)', 
-            models: [
-                { 
-                    id: 'llama-3.2-90b-vision-preview', 
-                    name: 'Llama 3.2 90B Vision',
-                    description: 'Meta\'s flagship vision model accelerated by Groq LPU.',
-                    tags: ['FAST', 'OPEN'],
-                    specs: { speed: 'INSTANT', quality: 'HD' }
-                }
-            ]
-        }
-    ];
+    // Cleanup camera on unmount or close
+    useEffect(() => {
+        return () => stopCamera();
+    }, []);
 
-    const startCamera = async (e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_CAMERA, FN_REGISTRY.TOOL_CAMERA_CAPTURE, 'START');
+    // --- HANDLERS ---
+
+    const handleToggle = () => {
+        debugService.logAction(UI_REGISTRY.TOOLS_BTN_TAB_VIS, FN_REGISTRY.NAVIGATE_TO_FEATURE, isOpen ? 'CLOSE' : 'OPEN');
+        if (isCameraActive) stopCamera();
+        onToggle();
+    };
+
+    const startCamera = async () => {
+        debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_CAMERA, FN_REGISTRY.TOOL_CAMERA_CAPTURE, 'INIT');
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment' } 
+                video: { facingMode: 'environment', width: { ideal: 1920 } } 
             });
             streamRef.current = stream;
             setIsCameraActive(true);
+            setAnalysisResult(null);
+            setEditResult(null);
         } catch (err) {
-            console.error("Camera Access Error:", err);
-            alert("Could not access camera. Please check permissions.");
+            alert("Camera access denied or unavailable.");
         }
     };
 
@@ -132,97 +156,97 @@ export const NeuralVision: React.FC<NeuralVisionProps> = ({ isOpen, onToggle, ic
         setIsCameraActive(false);
     };
 
-    const captureFrame = () => {
+    const captureFrame = useCallback(() => {
         if (!videoRef.current) return;
-        debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_CAMERA, FN_REGISTRY.TOOL_CAMERA_CAPTURE, 'CAPTURE');
         
+        const video = videoRef.current;
+        // High-res capture logic similar to optimizeImageForAI
+        const MAX_DIM = 1280;
+        let w = video.videoWidth;
+        let h = video.videoHeight;
+        
+        if (w > h) { if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; } }
+        else { if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; } }
+
         const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d');
+        
         if (ctx) {
-            ctx.drawImage(videoRef.current, 0, 0);
+            ctx.drawImage(video, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             
-            // Optimization: Export directly as compressed JPEG
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-            const base64 = dataUrl.split(',')[1];
-            
-            setInputBase64(base64);
+            setInputBase64(dataUrl.split(',')[1]);
             setInputType('image/jpeg');
-            
             stopCamera();
-            processAnalysis(base64, 'image/jpeg');
+            
+            debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_CAMERA, FN_REGISTRY.TOOL_CAMERA_CAPTURE, 'CAPTURED');
+        }
+    }, [setInputBase64, setInputType]);
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files?.[0]) {
+            const file = e.target.files[0];
+            try {
+                const optimized = await optimizeImageForAI(file);
+                setInputBase64(optimized.base64);
+                setInputType(optimized.mimeType);
+                setAnalysisResult(null);
+                setEditResult(null);
+            } catch(err) {
+                alert("Failed to process image.");
+            }
+        }
+        e.target.value = ''; // Reset
+    };
+
+    const executeAnalysis = async () => {
+        if (!inputBase64 || !inputType) return;
+        if (!isHealthy) { setAnalysisResult(`ERROR: ${selectedProvider} OFFLINE`); return; }
+
+        setLoading('ANALYZE');
+        setAnalysisResult(null);
+        setEditResult(null);
+
+        try {
+            debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_UPLOAD, FN_REGISTRY.TOOL_ANALYZE_IMAGE, selectedModel);
+            const res = await analyzeMultiModalMedia(
+                selectedProvider, 
+                selectedModel, 
+                inputBase64, 
+                inputType, 
+                prompt || "Analyze this image in detail. Identify objects, text, and context."
+            );
+            setAnalysisResult(res);
+        } catch (e: any) {
+            setAnalysisResult(`Analysis Failed: ${e.message}`);
+        } finally {
+            setLoading(null);
         }
     };
 
-    const processAnalysis = async (base64: string, mimeType: string) => {
-        debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_UPLOAD, FN_REGISTRY.TOOL_ANALYZE_IMAGE, selectedModel);
-        
-        if (!isHealthy) {
-            setAnalysisResult(`ERROR: Provider ${selectedProvider} is currently ${providerStatus}.`);
+    const executeEdit = async () => {
+        if (!inputBase64 || !inputType || !prompt) {
+            alert("Prompt required for editing.");
             return;
         }
-        setLoading('ANALYZE');
+        if (selectedProvider !== 'GEMINI') {
+            alert("Editing currently only supported on Gemini models.");
+            return;
+        }
+
+        setLoading('EDIT');
         setEditResult(null);
         setAnalysisResult(null);
-        
-        try {
-            const result = await analyzeMultiModalMedia(
-                selectedProvider,
-                selectedModel,
-                base64,
-                mimeType,
-                prompt || "Analyze this visual data in detail. Identify objects, text, and context."
-            );
-            setAnalysisResult(result);
-        } catch (err: any) { 
-            setAnalysisResult(`Visual analysis failed: ${err.message}`); 
-        } finally { 
-            setLoading(null); 
-        }
-    };
-
-    const handleMediaUpload = async (file: File, task: 'ANALYZE' | 'EDIT') => {
-        if (!file) return;
-        
-        const uiId = task === 'ANALYZE' ? UI_REGISTRY.TOOLS_VIS_BTN_UPLOAD : UI_REGISTRY.TOOLS_VIS_BTN_EDIT;
-        const fnId = task === 'ANALYZE' ? FN_REGISTRY.TOOL_ANALYZE_IMAGE : FN_REGISTRY.TOOL_GENERATE_IMAGE;
-        debugService.logAction(uiId, fnId, 'FILE_SELECTED');
-
-        if (!isHealthy) {
-            setAnalysisResult(`ERROR: Provider ${selectedProvider} is ${providerStatus}.`);
-            return;
-        }
 
         try {
-            // STEP 1: CLIENT-SIDE OPTIMIZATION
-            // Compresses image to prevent 413 Payload Too Large
-            const { base64, mimeType } = await optimizeImageForAI(file);
-            
-            // SAVE TO CONTEXT (Optimized version)
-            setInputBase64(base64);
-            setInputType(mimeType);
-            
-            setLoading(task);
-            setEditResult(null);
-            setAnalysisResult(null);
-
-            if (task === 'ANALYZE') {
-                await processAnalysis(base64, mimeType);
-            } else {
-                if (selectedProvider !== 'GEMINI') {
-                        setEditResult(null);
-                        setAnalysisResult("Image Editing (In-painting) is currently optimized for Gemini Native only.");
-                        setLoading(null);
-                        return;
-                }
-                const result = await editImage(base64, mimeType, prompt || "Enhance this image.");
-                setEditResult(result);
-                setLoading(null);
-            }
-        } catch (err: any) { 
-            setAnalysisResult(`Processing failed: ${err.message}`); 
+            debugService.logAction(UI_REGISTRY.TOOLS_VIS_BTN_EDIT, FN_REGISTRY.TOOL_GENERATE_IMAGE, 'EDIT_IMG');
+            const res = await editImage(inputBase64, inputType, prompt);
+            setEditResult(res);
+        } catch (e: any) {
+            setAnalysisResult(`Edit Failed: ${e.message}`);
+        } finally {
             setLoading(null);
         }
     };
@@ -239,175 +263,258 @@ export const NeuralVision: React.FC<NeuralVisionProps> = ({ isOpen, onToggle, ic
         }
     };
 
-    const handleToggle = () => {
-        debugService.logAction(UI_REGISTRY.TOOLS_BTN_TAB_VIS, FN_REGISTRY.NAVIGATE_TO_FEATURE, isOpen ? 'CLOSE' : 'OPEN');
-        onToggle();
-    };
-
-    const handleClear = () => {
+    const clearAll = () => {
         setInputBase64(null);
-        setInputType(null);
         setAnalysisResult(null);
         setEditResult(null);
+        setPrompt('');
+        if (isCameraActive) stopCamera();
     };
 
+    // --- UI RENDER ---
     return (
         <ToolGroup 
-            title="IMAGE ANALYSIS" 
+            title="NEURAL VISION" 
             icon={icon} 
-            subtitle="MULTIMODAL ANALYSIS" 
+            subtitle="MULTIMODAL ANALYSIS ENGINE" 
             isOpen={isOpen} 
             onToggle={handleToggle} 
             isLoading={!!loading} 
-            loadingText={localStatusMsg || ''}
+            loadingText={localStatus || ''}
         >
-             <div className="space-y-8 animate-fade-in p-4 md:p-6 relative">
-                {/* Internal Close Button */}
-                <button 
-                    onClick={(e) => { e.stopPropagation(); handleToggle(); }}
-                    className="absolute top-2 right-2 md:top-4 md:right-4 p-2 rounded-full hover:bg-white/5 text-neutral-400 hover:text-white transition-colors z-20"
-                    title="Minimize Vision"
-                >
-                    <X size={20} />
-                </button>
-
-                {/* SETTINGS HEADER */}
-                <div className="flex flex-col sm:flex-row gap-4 mb-4 bg-[#0f0f11] border border-white/5 p-5 rounded-[24px] shadow-sm">
-                    <div className="flex-1 space-y-2">
+            <div className="flex flex-col h-full bg-[#050505] text-white font-sans relative overflow-hidden">
+                
+                {/* 1. TOP BAR: SETTINGS & STATUS */}
+                <div className="p-4 md:p-6 border-b border-white/5 bg-[#0a0a0b] flex flex-col md:flex-row gap-4 justify-between items-start md:items-center relative z-20">
+                    <div className="flex-1 w-full md:w-auto">
                         <VisualModelSelector 
-                            label="Vision Engine"
+                            label="OPTICAL ENGINE"
                             selectedProviderId={selectedProvider}
                             selectedModelId={selectedModel}
-                            providers={providers}
+                            providers={PROVIDERS}
                             onSelect={(p, m) => { setSelectedProvider(p); setSelectedModel(m); }}
                             disabled={!!loading}
                         />
-                        {!isHealthy && <span className="text-red-500 flex items-center gap-1 text-[9px] font-bold pl-2 pt-2 uppercase tracking-wide"><AlertCircle size={10} /> {providerStatus}</span>}
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                         <div className={`px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${isHealthy ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+                             <div className={`w-1.5 h-1.5 rounded-full ${isHealthy ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`}></div>
+                             {providerStatus}
+                         </div>
+                         <button onClick={(e) => { e.stopPropagation(); handleToggle(); }} className="p-2 hover:bg-white/10 rounded-full transition-colors text-neutral-400 hover:text-white">
+                             <X size={18} />
+                         </button>
                     </div>
                 </div>
 
-                {/* SPLIT VIEW LAYOUT */}
-                <div className="flex flex-col lg:flex-row gap-8 lg:h-[600px]">
+                {/* 2. MAIN WORKSPACE */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
                     
-                    {/* LEFT: INPUT ZONE */}
-                    <div className="lg:w-5/12 flex flex-col gap-6 h-full">
-                        {isCameraActive ? (
-                            <div className="flex-1 relative rounded-[32px] overflow-hidden bg-black border border-accent/50 shadow-[0_0_40px_var(--accent-glow)] flex flex-col animate-fade-in ring-2 ring-accent/20 group">
-                                <video 
-                                    ref={videoRef} 
-                                    autoPlay 
-                                    playsInline 
-                                    muted 
-                                    className="w-full h-full object-cover flex-1"
-                                />
-                                {/* Scanning Overlay */}
-                                <div className="absolute inset-0 pointer-events-none opacity-50 bg-[linear-gradient(transparent_0%,rgba(0,255,255,0.1)_50%,transparent_100%)] bg-[length:100%_4px]"></div>
-                                <div className="absolute inset-0 pointer-events-none border-[40px] border-black/20"></div>
-                                <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-red-500/50 blur-[2px] animate-[scan_2s_linear_infinite] pointer-events-none"></div>
-
-                                <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-8 z-20">
-                                    <button onClick={stopCamera} className="p-4 rounded-full bg-white/20 backdrop-blur-md text-white hover:bg-white/30 border border-white/20 transition-all hover:scale-110"><X size={24}/></button>
-                                    <button onClick={captureFrame} className="w-20 h-20 rounded-full bg-white border-[6px] border-black/10 hover:scale-110 active:scale-95 transition-all shadow-2xl"></button>
-                                </div>
-                                <div className="absolute top-4 left-4 px-3 py-1 bg-red-500/20 text-red-500 rounded-full backdrop-blur flex items-center gap-2 border border-red-500/30 animate-pulse">
-                                    <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_10px_red]"></div>
-                                    <span className="text-[9px] font-black uppercase tracking-widest">LIVE_FEED</span>
-                                </div>
-                            </div>
-                        ) : (
-                            // Render Stored Image from Context if available
-                            inputBase64 ? (
-                                <div className="flex-1 relative rounded-[32px] overflow-hidden bg-black/40 border border-white/10 group">
-                                    <img src={`data:${inputType || 'image/png'};base64,${inputBase64}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="Input" />
-                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                                        <button onClick={handleClear} className="p-3 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={20}/></button>
-                                    </div>
-                                    <div className="absolute top-4 left-4 px-3 py-1 bg-black/60 backdrop-blur rounded-full text-[9px] font-black uppercase text-white border border-white/10">ACTIVE_INPUT</div>
-                                </div>
-                            ) : (
-                                <div 
-                                    onClick={() => fileInputRef.current?.click()} 
-                                    className="flex-1 border-2 border-dashed border-white/10 rounded-[32px] flex flex-col items-center justify-center text-center group hover:border-accent/50 hover:bg-accent/5 transition-all cursor-pointer relative overflow-hidden bg-[#0a0a0b]"
-                                >
-                                    <div className="w-24 h-24 rounded-[32px] bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg border border-white/5">
-                                        <ImageIcon size={40} className="text-neutral-400 group-hover:text-accent transition-colors" strokeWidth={1.5} />
-                                    </div>
-                                    <p className="text-[10px] font-black uppercase tech-mono text-neutral-400 group-hover:text-white transition-colors tracking-[0.3em] mb-8">DRAG_DROP_VISUAL_DATA</p>
+                    {/* LEFT: VISUAL INPUT (CAMERA / IMAGE) */}
+                    <div className="lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-white/5 relative bg-black/50">
+                        
+                        <div 
+                            className={`flex-1 relative flex items-center justify-center overflow-hidden transition-all p-4 md:p-8 
+                                ${isDragOver ? 'bg-accent/5 ring-2 ring-inset ring-accent/50' : ''}`}
+                            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                            onDragLeave={() => setIsDragOver(false)}
+                            onDrop={(e) => { 
+                                e.preventDefault(); setIsDragOver(false); 
+                                if(e.dataTransfer.files[0]) handleFileSelect({ target: { files: e.dataTransfer.files } } as any); 
+                            }}
+                        >
+                            {/* A. CAMERA MODE */}
+                            {isCameraActive ? (
+                                <div className="relative w-full h-full max-h-[600px] bg-black rounded-[24px] overflow-hidden border border-white/10 shadow-2xl group">
+                                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                                     
-                                    <div className="flex gap-3 relative z-10" onClick={e => e.stopPropagation()}>
-                                        <button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-white/10 hover:bg-white text-white hover:text-black rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm border border-white/5">UPLOAD</button>
-                                        <button onClick={startCamera} className="px-6 py-3 bg-white/10 hover:bg-accent text-white hover:text-black rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-sm border border-white/5"><Camera size={14}/> CAM</button>
+                                    {/* HUD Overlay */}
+                                    <div className="absolute inset-0 pointer-events-none">
+                                        <div className="absolute top-4 left-4 flex gap-2">
+                                            <span className="px-2 py-0.5 bg-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-widest border border-red-500/30 animate-pulse">REC</span>
+                                            <span className="px-2 py-0.5 bg-black/50 text-white text-[9px] font-mono border border-white/10">1080p_HQ</span>
+                                        </div>
+                                        <div className="absolute inset-x-0 top-1/2 h-[1px] bg-white/20"></div>
+                                        <div className="absolute inset-y-0 left-1/2 w-[1px] bg-white/20"></div>
+                                        <div className="absolute inset-0 border-[40px] border-black/10"></div>
+                                        {/* Scanner Line */}
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-accent/50 shadow-[0_0_15px_var(--accent-glow)] animate-scan"></div>
                                     </div>
-                                    <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && handleMediaUpload(e.target.files[0], 'ANALYZE')} accept="image/*,video/*" />
+
+                                    {/* Capture Controls */}
+                                    <div className="absolute bottom-6 inset-x-0 flex justify-center items-center gap-6 z-20 pointer-events-auto">
+                                        <button onClick={stopCamera} className="p-3 bg-white/10 hover:bg-red-500/20 text-white hover:text-red-500 rounded-full backdrop-blur-md transition-all"><X size={24}/></button>
+                                        <button onClick={captureFrame} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center group-active:scale-95 transition-all">
+                                            <div className="w-16 h-16 bg-white rounded-full shadow-[0_0_20px_white]"></div>
+                                        </button>
+                                    </div>
                                 </div>
-                            )
-                        )}
-
-                        <div className="relative shrink-0">
-                            <textarea 
-                                value={prompt} 
-                                onChange={(e) => setPrompt(e.target.value)} 
-                                placeholder="INSTRUCTION_SET..." 
-                                className="w-full bg-[#0a0a0b] p-6 rounded-[24px] border border-white/10 focus:border-accent/30 focus:shadow-lg focus:outline-none text-white font-mono text-xs h-32 resize-none placeholder:text-neutral-400 transition-all shadow-inner" 
-                            />
-                            <button onClick={() => editInputRef.current?.click()} className="absolute bottom-4 right-4 p-2.5 bg-white/5 hover:bg-white/10 text-neutral-500 hover:text-white rounded-xl transition-all" title="Edit Mode">
-                                <Layout size={16} />
-                                <input type="file" ref={editInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && handleMediaUpload(e.target.files[0], 'EDIT')} accept="image/*" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* RIGHT: OUTPUT ZONE */}
-                    <div className="flex-1 bg-[#0a0a0b] rounded-[32px] border border-white/5 overflow-hidden relative flex flex-col shadow-lg">
-                        <div className="h-16 bg-white/[0.02] border-b border-white/5 flex items-center px-8 justify-between shrink-0">
-                            <div className="flex items-center gap-3">
-                                <ScanEye size={20} className="text-accent" />
-                                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white">ANALYSIS_LOG</span>
-                            </div>
-                            <div className="flex gap-2">
-                                {(analysisResult) && (
-                                    <>
-                                        <button onClick={handleSpeak} className="text-neutral-400 hover:text-accent transition-colors p-2 rounded-lg hover:bg-white/5"><Volume2 size={18}/></button>
-                                        <button onClick={handleCopy} className="text-neutral-400 hover:text-accent transition-colors p-2 rounded-lg hover:bg-white/5"><Copy size={18}/></button>
-                                        <div className="w-[1px] h-6 bg-white/10 mx-1"></div>
-                                    </>
-                                )}
-                                {(analysisResult || editResult) && (
-                                    <button onClick={handleClear} className="text-neutral-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-white/5"><Trash2 size={18}/></button>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="flex-1 p-8 overflow-y-auto custom-scroll relative">
-                            {loading ? (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center space-y-6">
-                                    <div className="w-20 h-20 rounded-full border-4 border-accent/20 border-t-accent animate-spin shadow-[0_0_40px_var(--accent-glow)]"></div>
-                                    <p className="text-[10px] tech-mono font-black text-accent animate-pulse uppercase tracking-[0.3em]">{localStatusMsg}</p>
-                                </div>
-                            ) : editResult ? (
-                                <img src={editResult} alt="Result" className="w-full h-full object-contain rounded-2xl border border-white/5" />
-                            ) : analysisResult ? (
-                                <div className="prose dark:prose-invert prose-sm max-w-none text-neutral-300 font-medium text-[13px] leading-loose animate-slide-up">
-                                    <Markdown>{analysisResult}</Markdown>
+                            ) : inputBase64 ? (
+                                /* B. IMAGE PREVIEW MODE */
+                                <div className="relative w-full h-full flex flex-col items-center justify-center animate-fade-in group">
+                                    <div className="relative max-w-full max-h-full rounded-[24px] overflow-hidden border border-white/10 shadow-2xl">
+                                        <img 
+                                            src={`data:${inputType};base64,${inputBase64}`} 
+                                            alt="Analysis Target" 
+                                            className="w-full h-full object-contain max-h-[60vh] lg:max-h-[70vh]"
+                                        />
+                                        {/* Delete Overlay */}
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={clearAll} className="p-2 bg-black/60 backdrop-blur text-white hover:text-red-500 rounded-lg border border-white/10 hover:border-red-500/50 transition-all">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded-lg border border-white/10 text-[9px] font-mono text-white/70">
+                                        SOURCE_LOCKED
+                                    </div>
                                 </div>
                             ) : (
-                                <div className="flex flex-col items-center justify-center h-full opacity-30 gap-6">
-                                    <Aperture size={64} className="text-white" strokeWidth={1} />
-                                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-neutral-500">AWAITING_VISUAL_INPUT</p>
+                                /* C. EMPTY STATE / DROPZONE */
+                                <div className="text-center space-y-6 max-w-sm">
+                                    <div 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="w-24 h-24 mx-auto rounded-[32px] bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500 hover:text-accent hover:border-accent/30 hover:bg-accent/5 cursor-pointer transition-all duration-500 group shadow-inner"
+                                    >
+                                        <Upload size={32} className="group-hover:scale-110 transition-transform" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-black text-white uppercase tracking-tight mb-2">INPUT VISUAL DATA</h3>
+                                        <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                                            Upload image for deep analysis or modification. 
+                                            <br/> Supports JPG, PNG, WEBP.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-3 justify-center">
+                                        <button onClick={() => fileInputRef.current?.click()} className="px-5 py-2.5 bg-white text-black hover:bg-accent rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 shadow-lg">
+                                            UPLOAD FILE
+                                        </button>
+                                        <button onClick={startCamera} className="px-5 py-2.5 bg-white/10 text-white hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2">
+                                            <Camera size={14} /> CAMERA
+                                        </button>
+                                    </div>
+                                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*" />
                                 </div>
                             )}
                         </div>
                     </div>
+
+                    {/* RIGHT: CONTROL & OUTPUT */}
+                    <div className="lg:w-1/2 flex flex-col bg-[#0a0a0b]">
+                        
+                        {/* 1. CONTROLS */}
+                        <div className="p-6 border-b border-white/5 space-y-4 shrink-0">
+                            <div className="relative">
+                                <div className="absolute top-0 left-0 px-2 py-1 bg-white/5 rounded-br-lg border-r border-b border-white/5 text-[8px] font-black text-neutral-500 uppercase tracking-widest">
+                                    PROMPT_INSTRUCTION
+                                </div>
+                                <textarea 
+                                    value={prompt}
+                                    onChange={(e) => setPrompt(e.target.value)}
+                                    placeholder="Describe what you want to know or change..."
+                                    className="w-full h-24 bg-[#050505] border border-white/10 rounded-2xl p-4 pt-8 text-sm text-white focus:border-accent/50 focus:outline-none resize-none placeholder:text-neutral-700 transition-all font-medium"
+                                />
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={executeAnalysis}
+                                    disabled={!inputBase64 || !!loading}
+                                    className={`
+                                        flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all
+                                        ${!inputBase64 || loading 
+                                            ? 'bg-white/5 text-neutral-600 cursor-not-allowed' 
+                                            : 'bg-white text-black hover:bg-accent shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:scale-[1.01] active:scale-95'
+                                        }
+                                    `}
+                                >
+                                    <ScanEye size={16} /> ANALYZE
+                                </button>
+                                <button 
+                                    onClick={executeEdit}
+                                    disabled={!inputBase64 || !prompt || !!loading || selectedProvider !== 'GEMINI'}
+                                    className={`
+                                        flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all border
+                                        ${!inputBase64 || !prompt || loading || selectedProvider !== 'GEMINI'
+                                            ? 'bg-transparent border-white/5 text-neutral-700 cursor-not-allowed' 
+                                            : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-accent/50 hover:text-accent'
+                                        }
+                                    `}
+                                    title={selectedProvider !== 'GEMINI' ? "Switch to Gemini for Editing" : "Modify Image"}
+                                >
+                                    <Wand2 size={16} /> EDIT
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 2. OUTPUT LOG */}
+                        <div className="flex-1 overflow-y-auto custom-scroll p-6 relative">
+                            {/* Placeholder */}
+                            {!analysisResult && !editResult && !loading && (
+                                <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-3 opacity-50">
+                                    <Monitor size={32} strokeWidth={1} />
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em]">WAITING_FOR_DATA_STREAM</p>
+                                </div>
+                            )}
+
+                            {/* Text Result */}
+                            {analysisResult && (
+                                <div className="space-y-4 animate-slide-up">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-[10px] font-black text-accent uppercase tracking-widest flex items-center gap-2">
+                                            <Aperture size={12}/> ANALYSIS_REPORT
+                                        </h4>
+                                        <div className="flex gap-2">
+                                            <button onClick={handleSpeak} className="p-1.5 hover:bg-white/10 rounded-lg text-neutral-400 hover:text-white transition-colors"><Volume2 size={14}/></button>
+                                            <button onClick={handleCopy} className="p-1.5 hover:bg-white/10 rounded-lg text-neutral-400 hover:text-white transition-colors"><Copy size={14}/></button>
+                                        </div>
+                                    </div>
+                                    <div className="prose dark:prose-invert prose-sm max-w-none text-neutral-300 font-medium text-xs leading-loose p-4 bg-white/5 rounded-2xl border border-white/5">
+                                        <Markdown>{analysisResult}</Markdown>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Edit Result */}
+                            {editResult && (
+                                <div className="space-y-4 animate-slide-up">
+                                    <h4 className="text-[10px] font-black text-pink-500 uppercase tracking-widest flex items-center gap-2">
+                                        <Layers size={12}/> GENERATED_ASSET
+                                    </h4>
+                                    <div className="rounded-2xl overflow-hidden border border-white/10 shadow-xl bg-black">
+                                        <img src={editResult} alt="Edit Result" className="w-full h-auto" />
+                                    </div>
+                                    <a href={editResult} download="edited_image.png" className="block w-full py-3 text-center bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all">
+                                        DOWNLOAD ASSET
+                                    </a>
+                                </div>
+                            )}
+
+                            {/* Loading Overlay */}
+                            {loading && (
+                                <div className="absolute inset-0 bg-[#0a0a0b]/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center gap-6 animate-fade-in">
+                                    <div className="w-16 h-16 border-4 border-accent/20 border-t-accent rounded-full animate-spin"></div>
+                                    <div className="text-center">
+                                        <p className="text-[10px] font-black text-accent uppercase tracking-[0.2em] animate-pulse">{localStatus}</p>
+                                        <p className="text-[9px] text-neutral-500 font-mono mt-1">PROCESSING_NEURAL_LAYERS</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                 </div>
-             </div>
-             <style>{`
+            </div>
+            <style>{`
                 @keyframes scan {
                     0% { top: 0%; opacity: 0; }
                     10% { opacity: 1; }
                     90% { opacity: 1; }
                     100% { top: 100%; opacity: 0; }
                 }
-             `}</style>
+                .animate-scan { animation: scan 2s linear infinite; }
+            `}</style>
         </ToolGroup>
     );
 };
