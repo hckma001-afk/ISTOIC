@@ -4,11 +4,20 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
+<<<<<<< HEAD
   signInWithPopup,
   signInWithRedirect,
   signOut,
   setPersistence,
   browserLocalPersistence,
+=======
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+>>>>>>> codex/fix-app-for-android-installation-69ze6y
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -31,6 +40,7 @@ export const db = getFirestore(app);
 // Provider hanya didefinisikan, TIDAK dipakai di sini
 export const googleProvider = new GoogleAuthProvider();
 
+<<<<<<< HEAD
 /**
  * ✅ Pastikan session auth "nempel" (persist) di browser / webview (Capacitor).
  * Ini mencegah user ke-logout saat reload / restart.
@@ -52,3 +62,20 @@ export const ensureAuthPersistence = async () => {
 export const firebaseSignInWithPopup = signInWithPopup;
 export const firebaseSignInWithRedirect = signInWithRedirect;
 export { signOut };
+=======
+// Backward-compatible helpers for legacy imports
+export const firebaseSignInWithPopup = signInWithPopup;
+export const firebaseSignInWithRedirect = signInWithRedirect;
+export const firebaseSignOut = signOut;
+export { signInWithPopup, signInWithRedirect, signOut };
+
+export const ensureAuthPersistence = async (mode: "local" | "session" = "local") => {
+  if (!auth) return;
+  try {
+    const persistence = mode === "session" ? browserSessionPersistence : browserLocalPersistence;
+    await setPersistence(auth, persistence);
+  } catch (error) {
+    console.warn("[FIREBASE] Failed to set auth persistence.", error);
+  }
+};
+>>>>>>> codex/fix-app-for-android-installation-69ze6y
