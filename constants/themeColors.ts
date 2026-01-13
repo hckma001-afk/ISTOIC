@@ -1,5 +1,5 @@
 export const THEME_COLORS: Record<string, string> = {
- codex/update-theme-colors-and-ui-settings
+ 
   stone: '#a8a29e',
   graphite: '#4b5563',
   warmGray: '#78716c',
