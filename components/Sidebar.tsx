@@ -15,6 +15,13 @@ interface SidebarProps {
   chatLogic: any;
 }
 
+// Haptic feedback helper for mobile/PWA feel
+const triggerHaptic = () => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(2); // Ultra-short tick for UI feedback
+    }
+};
+
 export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveFeature }) => {
   const [personaMode] = useLocalStorage<'hanisah' | 'stoic'>('ai_persona_mode', 'hanisah');
   
@@ -93,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
 
   const handleNavClick = useCallback((id: FeatureID, uiId: string) => {
       // Direct call to avoid re-render overhead inside logAction if possible
+      triggerHaptic();
       if (debugService.logAction(uiId as any, FN_REGISTRY.NAVIGATE_TO_FEATURE, id)) {
           setActiveFeature(id);
       }
@@ -115,7 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
       {/* 2. THE DOCK (Floating Rail) */}
       <aside 
         className={`
-          hidden md:flex flex-col fixed top-0 left-0 bottom-0 z-[1200] 
+          hidden md:flex flex-col fixed top-0 left-0 bottom-0 z-[1200] select-none
           bg-skin-card/95 backdrop-blur-2xl 
           border-r border-skin-border/80
           ${transitionClass}
@@ -126,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
         `}
         aria-label="Main Navigation"
       >
-        <div className="flex flex-col h-full w-full overflow-hidden py-6 pt-safe pb-safe relative">
+        <div className="flex flex-col h-full w-full overflow-hidden py-6 pt-[env(safe-area-inset-top,24px)] pb-[env(safe-area-inset-bottom,20px)] relative">
           
           {/* Ambient Glow Gradient */}
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-accent/5 to-transparent pointer-events-none" />
@@ -136,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
               <div className="flex items-center justify-between w-full">
                   <button 
                     onClick={() => handleNavClick('dashboard', UI_REGISTRY.SIDEBAR_BTN_LOGO)}
-                    className="relative group outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-[18px] transition-all sheen"
+                    className="relative group outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-[18px] transition-all sheen touch-manipulation"
                     title="Dashboard"
                   >
                     <div className={`
@@ -155,7 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                   <div className={`transition-opacity duration-300 ${isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                       <button 
                         onClick={() => setIsExpanded(false)}
-                        className="p-2 rounded-xl text-skin-muted hover:text-skin-text hover:bg-skin-surface active:scale-90 transition-all outline-none"
+                        className="p-2 rounded-xl text-skin-muted hover:text-skin-text hover:bg-skin-surface active:scale-90 transition-all outline-none touch-manipulation"
                       >
                           <PanelLeftClose size={18} />
                       </button>
@@ -165,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
               <div className={`absolute top-0 right-0 left-0 flex justify-center transition-all duration-300 ${!isExpanded ? 'opacity-100 translate-y-14' : 'opacity-0 pointer-events-none translate-y-10'}`}>
                   <button 
                     onClick={() => setIsExpanded(true)}
-                    className="p-2 rounded-xl text-skin-muted hover:text-accent hover:bg-accent/10 active:scale-90 transition-all outline-none"
+                    className="p-2 rounded-xl text-skin-muted hover:text-accent hover:bg-accent/10 active:scale-90 transition-all outline-none touch-manipulation"
                   >
                       <PanelLeft size={20} strokeWidth={2} />
                   </button>
@@ -195,7 +203,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
                   onClick={() => !isDisabled && handleNavClick(feature.id as FeatureID, uiId)}
                   disabled={isDisabled}
                   className={`
-                    relative flex items-center rounded-[18px] transition-all duration-300 group outline-none sheen
+                    relative flex items-center rounded-[18px] transition-all duration-300 group outline-none sheen touch-manipulation
                     ${isExpanded ? 'w-full px-4 py-3.5 gap-4' : 'w-12 h-12 justify-center mx-auto aspect-square'}
                     ${isDisabled 
                         ? 'opacity-40 cursor-not-allowed grayscale' 
@@ -244,7 +252,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
              <button 
                 onClick={() => handleNavClick('system', UI_REGISTRY.SIDEBAR_BTN_SYSTEM)}
                 className={`
-                    rounded-[20px] transition-all w-full text-left group relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sheen
+                    rounded-[20px] transition-all w-full text-left group relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sheen touch-manipulation
                     ${isExpanded 
                         ? 'p-3.5 bg-skin-surface/60 border border-skin-border hover:border-accent/30 hover:bg-skin-surface' 
                         : 'p-0 border-transparent bg-transparent justify-center flex'
@@ -279,7 +287,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({ activeFeature, setActiveF
              <button 
                 onClick={() => handleNavClick('settings', UI_REGISTRY.SIDEBAR_BTN_SETTINGS)}
                 className={`
-                  flex items-center rounded-[18px] transition-all duration-300 group outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sheen
+                  flex items-center rounded-[18px] transition-all duration-300 group outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sheen touch-manipulation
                   ${isExpanded ? 'w-full px-4 py-3 gap-3 bg-transparent hover:bg-skin-surface/80 text-skin-muted hover:text-skin-text' : 'w-12 h-12 justify-center mx-auto hover:bg-skin-surface/80 text-skin-muted'}
                   ${activeFeature === 'settings' ? 'text-accent' : ''}
                 `}

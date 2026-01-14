@@ -208,7 +208,7 @@ export const SystemHealthView: React.FC = () => {
     }
   }, [logs, activeTab, isAutoScroll, isStreamFrozen]);
 
-  const filteredLogs = useMemo(() => {
+  const filteredLogs = React.useMemo(() => {
     return logs.filter((log) => {
       const matchesFilter = logFilter === 'ALL' || log.level === logFilter;
       const matchesSearch = logSearch === '' || JSON.stringify(log).toLowerCase().includes(logSearch.toLowerCase());

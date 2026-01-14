@@ -1,33 +1,13 @@
-// IMPORT WAJIB: Penyeimbang WebRTC untuk semua browser (Safari/Android lama)
-import 'webrtc-adapter';
-
-// NOTE: Global Error Handlers for Web3 conflicts are now injected in index.html <head>
-// to ensure they run before any extension code.
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { VaultProvider } from './contexts/VaultContext';
-import { FeatureProvider } from './contexts/FeatureContext';
-
-// ✅ Capacitor URL handler (untuk balik dari Google Login ke app)
+import './index.css';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
-
-// Firebase redirect result (ambil hasil login setelah balik)
-import { getAuth, getRedirectResult } from 'firebase/auth';
-const auth = getAuth();
-
-// Mencegah error jika root tidak ditemukan (Safety check)
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error('FATAL: Could not find root element to mount to');
-}
-
-const root = ReactDOM.createRoot(rootElement);
+import { getRedirectResult } from 'firebase/auth';
+import { auth } from './services/firebase';
 
 /**
- * ✅ Tangkap redirect balik dari browser ke app (Capacitor)
  * Ini penting untuk Firebase Google Login redirect.
  */
 if (Capacitor.isNativePlatform()) {
@@ -44,6 +24,13 @@ if (Capacitor.isNativePlatform()) {
     // Kembalikan ke root app (hindari nyangkut di handler page)
     window.location.replace('/');
   });
+} else {
+  // FIX: iOS PWA Loop "Restoring Identity"
+  // iOS PWA menggunakan redirect flow. Saat page reload, kita harus ambil result-nya.
+  // Tanpa ini, Firebase tidak akan men-trigger onAuthStateChanged dengan user baru.
+  getRedirectResult(auth).catch((e) => {
+    console.debug("PWA Redirect Check:", e);
+  });
 }
 
 /**
@@ -58,18 +45,13 @@ if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
         console.log('SW Registered:', registration.scope);
       })
       .catch((error) => {
-        console.log('SW Registration Failed:', error);
+        console.error('SW Registration failed:', error);
       });
   });
 }
 
-// StrictMode diaktifkan untuk best practice
-root.render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <FeatureProvider>
-      <VaultProvider>
-        <App />
-      </VaultProvider>
-    </FeatureProvider>
+    <App />
   </React.StrictMode>
 );

@@ -149,6 +149,7 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                     videoRef.current.srcObject = stream;
                     videoRef.current.setAttribute("playsinline", "true");
                     videoRef.current.play().then(() => {
+                        if (navigator.vibrate) navigator.vibrate(50);
                         requestAnimationFrame(scanLoop);
                     }).catch(e => console.error("Play error:", e));
                 }
@@ -222,7 +223,8 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                     <video 
                         ref={videoRef} 
                         className="w-full h-full object-cover"
-                        playsInline
+                        playsInline // React prop
+                        webkit-playsinline="true" // Legacy iOS support
                         muted
                     />
                     <div className="absolute inset-0 bg-black/30"></div>
@@ -232,7 +234,7 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                         </div>
                     </div>
                 </div>
-                <div className="p-8 bg-black flex justify-center pb-safe">
+                <div className="p-8 bg-black flex justify-center pb-[env(safe-area-inset-bottom,32px)]">
                     <button onClick={stopScanner} className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-white border border-white/20 active:scale-95 transition-all">
                         <X size={24} />
                     </button>
@@ -281,7 +283,10 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                                 value={targetId}
                                 onChange={(e) => processRawInput(e.target.value)}
                                 placeholder="Paste ID or Link..." 
-                                className="w-full bg-[#121214] border border-white/10 rounded-2xl px-5 py-4 text-sm font-medium text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-neutral-600 pr-12"
+                                className="w-full bg-[#121214] border border-white/10 rounded-2xl px-5 py-4 text-base font-medium text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-neutral-600 pr-12"
+                                autoComplete="off"
+                                autoCapitalize="off"
+                                spellCheck="false"
                                 autoFocus
                             />
                             <button 
@@ -304,7 +309,8 @@ export const IStokAuth: React.FC<IStokAuthProps> = ({
                                 inputMode="numeric"
                                 maxLength={6}
                                 placeholder="******" 
-                                className="w-full bg-[#121214] border border-white/10 rounded-2xl px-5 py-4 text-sm font-mono text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-neutral-600 text-center tracking-[0.5em]"
+                                className="w-full bg-[#121214] border border-white/10 rounded-2xl px-5 py-4 text-base font-mono text-white focus:outline-none focus:border-blue-500 transition-all placeholder:text-neutral-600 text-center tracking-[0.5em]"
+                                autoComplete="off"
                             />
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-600 pointer-events-none" size={16} />
                         </div>
