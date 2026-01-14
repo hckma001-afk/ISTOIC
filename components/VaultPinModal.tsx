@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Lock, Unlock, X, AlertCircle, Fingerprint, Settings } from 'lucide-react';
+import { Shield, Lock, Unlock, AlertCircle, Fingerprint, Settings } from 'lucide-react';
 import { verifyVaultAccess, isSystemPinConfigured } from '../utils/crypto';
+import { Dialog } from './ui/Dialog';
 
 interface VaultPinModalProps {
     isOpen: boolean;
@@ -34,15 +34,12 @@ export const VaultPinModal: React.FC<VaultPinModalProps> = ({ isOpen, onClose, o
         e?.preventDefault();
         setVerifying(true);
         
-        // If not configured (No Local PIN AND No Master Key), bypass.
-        // In real usage, this prompts setup, but for now we allow access to Settings.
         if (!isConfigured) {
             onSuccess();
             onClose();
             return;
         }
 
-        // UNIFIED CHECK: User PIN or Master PIN
         const isValid = await verifyVaultAccess(pin);
 
         if (isValid) {
@@ -57,29 +54,35 @@ export const VaultPinModal: React.FC<VaultPinModalProps> = ({ isOpen, onClose, o
         setVerifying(false);
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-            <div className={`
-                relative w-full max-w-sm bg-white dark:bg-[#0a0a0b] border border-black/5 dark:border-white/10 rounded-[32px] p-8 
-                shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col items-center gap-6
-                ${shake ? 'animate-[shake_0.5s_cubic-bezier(.36,.07,.19,.97)_both]' : ''}
-            `}>
-                <button onClick={onClose} className="absolute top-6 right-6 text-neutral-400 hover:text-black dark:hover:text-white transition-colors">
-                    <X size={20} />
+        <Dialog
+            open={isOpen}
+            onClose={onClose}
+            title="Unlock Vault"
+            size="sm"
+            footer={
+                <button 
+                    onClick={() => handleSubmit()}
+                    disabled={verifying}
+                    className="px-4 py-2 rounded-lg bg-accent text-black font-semibold text-sm tracking-wide hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
+                    type="button"
+                >
+                    {isConfigured ? (error ? <Lock size={14} /> : <Unlock size={14} />) : <Settings size={14} />} 
+                    {isConfigured ? (verifying ? 'Verifying...' : (error ? 'Retry' : 'Unlock')) : 'Proceed'}
                 </button>
-
-                <div className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-500 ${error ? 'bg-red-500/10 text-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)]' : 'bg-accent/10 text-accent shadow-[0_0_30px_var(--accent-glow)]'}`}>
-                    {isConfigured ? (error ? <AlertCircle size={32} /> : <Shield size={32} />) : <Settings size={32} />}
+            }
+        >
+            <div className="flex flex-col items-center gap-4">
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-500 ${error ? 'bg-danger/10 text-danger shadow-[0_0_30px_rgba(255,0,30,0.15)]' : 'bg-accent/10 text-accent shadow-[0_0_30px_var(--accent-glow)]'}`}>
+                    {isConfigured ? (error ? <AlertCircle size={28} /> : <Shield size={28} />) : <Settings size={28} />}
                 </div>
 
-                <div className="text-center space-y-2">
-                    <h3 className="text-xl font-black text-black dark:text-white uppercase italic tracking-tighter">
-                        {isConfigured ? (error ? 'ACCESS DENIED' : 'SECURITY CLEARANCE') : 'VAULT UNSECURED'}
+                <div className="text-center space-y-1">
+                    <h3 className="heading-3 text-text">
+                        {isConfigured ? (error ? 'Authentication failed' : 'Enter vault PIN') : 'Vault not configured'}
                     </h3>
-                    <p className="text-[10px] tech-mono font-bold text-neutral-500 uppercase tracking-widest">
-                        {isConfigured ? (error ? 'INVALID PASSCODE' : 'ENTER VAULT PIN TO DECRYPT') : 'NO PIN CONFIGURED'}
+                    <p className="caption text-text-muted">
+                        {isConfigured ? 'Keep your data secure with your PIN.' : 'Set up a PIN in Settings to secure your data.'}
                     </p>
                 </div>
 
@@ -90,32 +93,19 @@ export const VaultPinModal: React.FC<VaultPinModalProps> = ({ isOpen, onClose, o
                             type="password" 
                             value={pin}
                             onChange={(e) => { setPin(e.target.value); setError(false); }}
-                            className="w-full bg-zinc-100 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl px-4 py-4 text-center text-2xl font-black text-black dark:text-white tracking-[0.5em] focus:outline-none focus:border-accent/50 focus:bg-white dark:focus:bg-white/10 transition-all placeholder:text-neutral-300 dark:placeholder:text-white/10"
-                            placeholder="••••••"
+                            className={`w-full bg-skin-surface border border-skin-border rounded-xl px-4 py-4 text-center text-2xl font-black text-text tracking-[0.5em] focus:outline-none focus:border-accent transition-all placeholder:text-text-muted ${shake ? 'animate-[shake_0.5s_cubic-bezier(.36,.07,.19,.97)_both]' : ''}`}
+                            placeholder="******"
                             maxLength={10}
                             autoComplete="off"
                             disabled={verifying}
                         />
-                        <Fingerprint className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-300 dark:text-white/20 pointer-events-none" size={20} />
+                        <Fingerprint className="absolute right-4 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none" size={20} />
                     </form>
                 ) : (
-                    <div className="text-center text-xs text-neutral-500 px-4">
-                        System security is currently disabled. Please configure a PIN in Settings to secure your data.
+                    <div className="text-center text-sm text-text-muted px-2">
+                        Security is disabled. Configure a PIN in Settings to protect your vault.
                     </div>
                 )}
-
-                <button 
-                    onClick={() => handleSubmit()}
-                    disabled={verifying}
-                    className="w-full py-4 bg-black dark:bg-white text-white dark:text-black hover:bg-accent dark:hover:bg-accent hover:text-black dark:hover:text-black transition-all rounded-xl font-black uppercase text-[11px] tracking-[0.3em] flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-95 disabled:opacity-50"
-                >
-                    {isConfigured ? (error ? <Lock size={14} /> : <Unlock size={14} />) : <Settings size={14} />} 
-                    {isConfigured ? (verifying ? 'VERIFYING...' : (error ? 'RETRY AUTH' : 'AUTHENTICATE')) : 'PROCEED & SETUP'}
-                </button>
-
-                <p className="text-[8px] text-neutral-400 font-mono text-center">
-                    SECURE_ENCLAVE_V15.0 // HARDWARE_ENCRYPTION_ACTIVE
-                </p>
             </div>
             <style>{`
                 @keyframes shake {
@@ -125,6 +115,6 @@ export const VaultPinModal: React.FC<VaultPinModalProps> = ({ isOpen, onClose, o
                     40%, 60% { transform: translate3d(4px, 0, 0); }
                 }
             `}</style>
-        </div>
+        </Dialog>
     );
 };
