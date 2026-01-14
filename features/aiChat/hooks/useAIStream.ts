@@ -1,168 +1,244 @@
-
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { STOIC_KERNEL as SK } from '../../../services/stoicKernel';
 import { MODEL_CATALOG, HANISAH_KERNEL as HK } from '../../../services/melsaKernel';
 import { executeNeuralTool } from '../services/toolHandler';
 import { speakWithHanisah } from '../../../services/elevenLabsService';
-import { debugService } from '../../../services/debugService';
-import { Note, ChatThread } from '../../../types';
+import type { Note } from '../../../types';
 
-interface AIStreamProps {
-    notes: Note[];
-    setNotes: (notes: Note[]) => void;
-    activeThread: ChatThread | null;
-    storage: any; // Typed as return of useChatStorage
-    isVaultUnlocked: boolean;
-    vaultEnabled: boolean;
-    isAutoSpeak: boolean;
-    imageModelId: string;
+type StreamErrorType = 'abort' | 'network' | 'rate_limit' | 'unknown';
+
+interface StreamRequest {
+  prompt: string;
+  activeModel: (typeof MODEL_CATALOG)[number];
+  threadId: string;
+  persona: 'hanisah' | 'stoic';
+  attachment?: { data: string; mimeType: string };
+  retryMessageId?: string;
+}
+
+interface StreamResult {
+  messageId: string;
+  errorType?: StreamErrorType;
 }
 
 export const useAIStream = ({
-    notes,
-    setNotes,
-    activeThread,
-    storage,
-    isVaultUnlocked,
-    vaultEnabled,
-    isAutoSpeak,
-    imageModelId
-}: AIStreamProps) => {
-    const [isLoading, setIsLoading] = useState(false);
-    const abortControllerRef = useRef<AbortController | null>(null);
+  notes,
+  setNotes,
+  storage,
+  isAutoSpeak,
+  imageModelId
+}: {
+  notes: Note[];
+  setNotes: (notes: Note[]) => void;
+  storage: any;
+  isAutoSpeak: boolean;
+  imageModelId: string;
+}) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const flushTimeoutRef = useRef<number | null>(null);
+  const pendingUpdateRef = useRef<{
+    threadId: string;
+    messageId: string;
+    text: string;
+    metadata?: Record<string, unknown>;
+  } | null>(null);
 
-    const stopGeneration = useCallback(() => {
-        if (abortControllerRef.current) {
-            debugService.log('WARN', 'CHAT', 'ABORT', 'User stopped generation.');
-            abortControllerRef.current.abort();
-            abortControllerRef.current = null;
-            setIsLoading(false);
+  const flushPending = useCallback(() => {
+    if (pendingUpdateRef.current) {
+      const pending = pendingUpdateRef.current;
+      storage.updateMessage(pending.threadId, pending.messageId, {
+        text: pending.text,
+        metadata: pending.metadata
+      });
+      pendingUpdateRef.current = null;
+    }
+    if (flushTimeoutRef.current) {
+      clearTimeout(flushTimeoutRef.current);
+      flushTimeoutRef.current = null;
+    }
+  }, [storage]);
+
+  const scheduleUpdate = useCallback(
+    (threadId: string, messageId: string, text: string, metadata?: Record<string, unknown>) => {
+      pendingUpdateRef.current = { threadId, messageId, text, metadata };
+      if (flushTimeoutRef.current !== null) return;
+
+      flushTimeoutRef.current = window.setTimeout(() => {
+        flushTimeoutRef.current = null;
+        flushPending();
+      }, 45);
+    },
+    [flushPending]
+  );
+
+  const stopGeneration = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    flushPending();
+    setIsLoading(false);
+  }, [flushPending]);
+
+  useEffect(() => {
+    return () => stopGeneration();
+  }, [stopGeneration]);
+
+  const resolveErrorType = (err: unknown): StreamErrorType => {
+    if (!err) return 'unknown';
+    const message = typeof err === 'string' ? err : (err as any)?.message || '';
+    if ((err as any)?.name === 'AbortError' || message === 'ABORTED_BY_USER') return 'abort';
+    if (String(message).includes('429')) return 'rate_limit';
+    if (String(message).toLowerCase().includes('network') || String(message).includes('Failed to fetch')) return 'network';
+    return 'unknown';
+  };
+
+  const appendToolResult = useCallback(
+    async (chunk: any, accumulatedText: string, threadId: string, messageId: string) => {
+      const toolName = chunk.functionCall?.name || 'tool';
+      let nextText = `${accumulatedText}\n\n> Executing: ${toolName.replace(/_/g, ' ')}`;
+      scheduleUpdate(threadId, messageId, nextText, { status: 'success' });
+
+      try {
+        const result = await executeNeuralTool(chunk.functionCall, notes, setNotes, imageModelId);
+        const formatted = result.trim().startsWith('![') ? `\n\n${result}` : `\n\n${result}`;
+        nextText = `${nextText}${formatted}`;
+      } catch (toolError: any) {
+        nextText = `${nextText}\n\n> Tool failed: ${toolError?.message || 'Unknown issue.'}`;
+      }
+
+      return nextText;
+    },
+    [imageModelId, notes, scheduleUpdate, setNotes]
+  );
+
+  const streamMessage = useCallback(
+    async ({ prompt, activeModel, threadId, persona, attachment, retryMessageId }: StreamRequest): Promise<StreamResult> => {
+      stopGeneration();
+      const modelMessageId = retryMessageId || uuidv4();
+      const baseMetadata = {
+        status: 'loading',
+        model: activeModel.id,
+        provider: activeModel.provider
+      };
+
+      if (retryMessageId) {
+        storage.updateMessage(threadId, retryMessageId, { text: '', metadata: baseMetadata });
+      } else {
+        storage.addMessage(threadId, {
+          id: modelMessageId,
+          role: 'model',
+          text: '',
+          metadata: baseMetadata
+        });
+      }
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const signal = controller.signal;
+      setIsLoading(true);
+
+      let accumulatedText = '';
+      let lastChunk = '';
+      let errorType: StreamErrorType | undefined;
+
+      try {
+        const kernel = persona === 'hanisah' ? HK : SK;
+        const stream = kernel.streamExecute(
+          prompt || 'Proceed with attachment analysis.',
+          activeModel.id,
+          notes,
+          attachment,
+          { signal }
+        );
+
+        for await (const chunk of stream) {
+          if (signal.aborted) {
+            throw new DOMException('ABORTED_BY_USER', 'AbortError');
+          }
+
+          if (chunk.text && chunk.text !== lastChunk) {
+            accumulatedText += chunk.text;
+            lastChunk = chunk.text;
+          }
+
+          if (chunk.functionCall) {
+            accumulatedText = await appendToolResult(chunk, accumulatedText, threadId, modelMessageId);
+          }
+
+          const metadataPatch = {
+            ...chunk.metadata,
+            groundingChunks: chunk.groundingChunks,
+            status: 'success',
+            model: activeModel.id,
+            provider: activeModel.provider
+          };
+
+          if (accumulatedText || chunk.metadata || chunk.groundingChunks) {
+            scheduleUpdate(threadId, modelMessageId, accumulatedText, metadataPatch);
+          }
         }
-    }, []);
 
-    const streamMessage = useCallback(async (
-        userMsg: string, 
-        activeModel: any,
-        targetThreadId: string,
-        targetPersona: 'hanisah' | 'stoic',
-        attachment?: { data: string, mimeType: string }
-    ) => {
-        setIsLoading(true);
-        const modelMessageId = uuidv4();
-        const transmissionId = uuidv4().slice(0,8);
-        
-        console.group(`🧠 NEURAL_LINK_TRANSMISSION: ${transmissionId}`);
+        if (!accumulatedText.trim()) {
+          accumulatedText =
+            persona === 'hanisah'
+              ? 'Aku tidak menemukan jawaban yang jelas. Coba tanyakan lagi dengan detail berbeda.'
+              : 'No response received. Refine the prompt and try again.';
+          scheduleUpdate(threadId, modelMessageId, accumulatedText, {
+            status: 'success',
+            model: activeModel.id,
+            provider: activeModel.provider
+          });
+        }
 
-        // 1. Create Placeholder for AI Response using STORAGE (Safe Update)
-        storage.addMessage(targetThreadId, { 
-            id: modelMessageId, 
-            role: 'model', 
-            text: '', 
-            metadata: { status: 'success', model: activeModel.name, provider: activeModel.provider } 
+        if (isAutoSpeak && accumulatedText) {
+          speakWithHanisah(accumulatedText.replace(/[*#_`]/g, ''), persona === 'hanisah' ? 'Hanisah' : 'Fenrir');
+        }
+
+        return { messageId: modelMessageId };
+      } catch (err) {
+        errorType = resolveErrorType(err);
+        const isAbort = errorType === 'abort';
+        const friendlyMessage =
+          errorType === 'rate_limit'
+            ? 'We are hitting a temporary limit. Please wait a few seconds and retry.'
+            : errorType === 'network'
+              ? 'Network interrupted. Check your connection and retry.'
+              : isAbort
+                ? 'Response cancelled.'
+                : 'Something went wrong while generating the reply.';
+
+        const retryContext = {
+          prompt,
+          attachment,
+          persona,
+          modelId: activeModel.id,
+          threadId
+        };
+
+        scheduleUpdate(threadId, modelMessageId, `${accumulatedText}${accumulatedText ? '\n\n' : ''}${friendlyMessage}`, {
+          status: isAbort ? 'success' : 'error',
+          errorType,
+          retryContext,
+          model: activeModel.id,
+          provider: activeModel.provider
         });
 
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        const signal = controller.signal;
+        return { messageId: modelMessageId, errorType };
+      } finally {
+        setIsLoading(false);
+        abortControllerRef.current = null;
+        flushPending();
+      }
+    },
+    [appendToolResult, flushPending, isAutoSpeak, notes, scheduleUpdate, setNotes, stopGeneration]
+  );
 
-        // Define variables OUTSIDE try block so they are accessible in catch
-        let accumulatedText = "";
-        let chunkCount = 0;
-
-        try {
-            const kernel = targetPersona === 'hanisah' ? HK : SK;
-            
-            // Pass original 'notes' array
-            const stream = kernel.streamExecute(
-                userMsg || "Proceed with attachment analysis.", 
-                activeModel.id, 
-                notes, 
-                attachment,
-                { signal } 
-            );
-            
-            for await (const chunk of stream) {
-                if (signal.aborted) throw new Error("ABORTED_BY_USER");
-
-                if (chunk.text) {
-                    accumulatedText += chunk.text;
-                    chunkCount++;
-                }
-
-                if (chunk.functionCall) {
-                    const toolName = chunk.functionCall.name;
-                    accumulatedText += `\n\n> ⚙️ **EXECUTING:** ${toolName.replace(/_/g, ' ').toUpperCase()}...\n`;
-                    
-                    // Update UI with progress via STORAGE
-                    storage.updateMessage(targetThreadId, modelMessageId, { text: accumulatedText });
-
-                    try {
-                        const toolResult = await executeNeuralTool(chunk.functionCall, notes, setNotes, imageModelId);
-                         if (toolResult.includes('![Generated Visual]') || toolResult.trim().startsWith('![')) {
-                             accumulatedText += `\n\n${toolResult}\n\n`;
-                        } else {
-                             accumulatedText += `> ✅ **RESULT:** ${toolResult}\n\n`;
-                        }
-                    } catch (toolError: any) {
-                        accumulatedText += `> ❌ **FAIL:** ${toolError.message}\n\n`;
-                    }
-                    chunkCount++;
-                }
-
-                // Stream Update via STORAGE (Prevents race conditions with user message)
-                storage.updateMessage(targetThreadId, modelMessageId, { 
-                    text: accumulatedText,
-                    metadata: { 
-                        // We need to merge metadata carefully
-                        ...(chunk.metadata || {}),
-                        groundingChunks: chunk.groundingChunks
-                    }
-                });
-            }
-
-            // Fallback for empty response
-            if (!accumulatedText.trim() && chunkCount === 0) {
-                accumulatedText = targetPersona === 'hanisah' 
-                    ? "_ (tersenyum) _\n\n*Hmm, aku blank bentar. Coba tanya lagi?*" 
-                    : "> **NULL OUTPUT DETECTED**\n\nThe logic stream yielded no data. Refine parameters.";
-                storage.updateMessage(targetThreadId, modelMessageId, { text: accumulatedText });
-            }
-
-            // TTS Trigger
-            if (isAutoSpeak && accumulatedText) {
-                speakWithHanisah(accumulatedText.replace(/[*#_`]/g, ''), targetPersona === 'hanisah' ? 'Hanisah' : 'Fenrir');
-            }
-
-        } catch (err: any) {
-             console.error(`[${transmissionId}] ERROR:`, err);
-             let errorText = "";
-             let status: 'error' | 'success' = 'success';
-             
-             if (err.message === "ABORTED_BY_USER" || err.name === "AbortError") {
-                errorText = `\n\n> 🛑 **INTERRUPTED**`;
-             } else {
-                 status = 'error';
-                 errorText = targetPersona === 'hanisah' 
-                    ? `\n\n_ (Menggaruk kepala) _\n*Aduh, maaf banget sayang. Sinyalnya lagi ngajak berantem nih.*` 
-                    : `\n\n> **SYSTEM ANOMALY DETECTED**\n\nProcessing stream interrupted.`;
-             }
-             
-             // Append error to whatever text we got
-             storage.updateMessage(targetThreadId, modelMessageId, { 
-                 text: accumulatedText + errorText, 
-                 metadata: { status: status } 
-             });
-        } finally {
-            setIsLoading(false);
-            abortControllerRef.current = null;
-            console.groupEnd();
-        }
-    }, [notes, isVaultUnlocked, vaultEnabled, isAutoSpeak, setNotes, storage, imageModelId]);
-
-    return {
-        isLoading,
-        stopGeneration,
-        streamMessage
-    };
+  return {
+    isLoading,
+    stopGeneration,
+    streamMessage
+  };
 };

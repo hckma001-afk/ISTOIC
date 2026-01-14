@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 
 interface DialogProps {
     open: boolean;
@@ -61,7 +62,7 @@ export const Dialog: React.FC<DialogProps> = ({ open, onClose, title, size = 'md
                         aria-label="Close dialog"
                         type="button"
                     >
-                        ×
+                        <X size={18} />
                     </button>
                 </div>
                 <div className="flex-1 overflow-auto px-6 py-5 custom-scroll bg-skin-card">

@@ -72,11 +72,85 @@ export class NeuralLinkService {
     private retryCount = 0;
     private maxRetries = 3;
     private isWorkletLoaded: boolean = false;
+    private lifecycleCleanup: (() => void) | null = null;
     
     // Modules
     private currentMicMode: MicMode = 'STANDARD';
 
     constructor() {}
+
+    private attachLifecycleHandlers() {
+        if (this.lifecycleCleanup) return;
+
+        const handleVisibility = () => {
+            if (document.visibilityState === 'hidden') {
+                this.pauseContexts();
+            } else {
+                this.resumeContexts();
+            }
+        };
+
+        const handlePageHide = () => this.disconnect(true);
+        const handleAppPause = () => this.pauseContexts();
+        const handleAppResume = () => this.resumeContexts();
+
+        document.addEventListener('visibilitychange', handleVisibility);
+        document.addEventListener('pagehide', handlePageHide);
+        document.addEventListener('pause', handleAppPause);
+        document.addEventListener('resume', handleAppResume);
+
+        this.lifecycleCleanup = () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            document.removeEventListener('pagehide', handlePageHide);
+            document.removeEventListener('pause', handleAppPause);
+            document.removeEventListener('resume', handleAppResume);
+            this.lifecycleCleanup = null;
+        };
+    }
+
+    private detachLifecycleHandlers() {
+        if (this.lifecycleCleanup) {
+            this.lifecycleCleanup();
+            this.lifecycleCleanup = null;
+        }
+    }
+
+    private pauseContexts() {
+        try { this.inputCtx?.suspend(); } catch (_) {}
+        try { this.outputCtx?.suspend(); } catch (_) {}
+        if (this.activeStream) {
+            this.activeStream.getAudioTracks().forEach(t => { t.enabled = false; });
+        }
+    }
+
+    private resumeContexts() {
+        try { if (this.inputCtx && this.inputCtx.state === 'suspended') this.inputCtx.resume(); } catch (_) {}
+        try { if (this.outputCtx && this.outputCtx.state === 'suspended') this.outputCtx.resume(); } catch (_) {}
+        if (this.activeStream) {
+            this.activeStream.getAudioTracks().forEach(t => { t.enabled = true; });
+        }
+    }
+
+    private closeContexts() {
+        if (this.inputCtx) {
+            try { this.inputCtx.close(); } catch (_) {}
+            this.inputCtx = null;
+            this.isWorkletLoaded = false;
+        }
+        if (this.outputCtx) {
+            try { this.outputCtx.close(); } catch (_) {}
+            this.outputCtx = null;
+            this._analyser = null;
+        }
+    }
+
+    async switchVoice(voiceName: string) {
+        if (!this.config) return;
+        this.config.voiceName = voiceName;
+        if (this.config.engine === 'GEMINI_REALTIME' && this.isConnected) {
+            await this.connect({ ...this.config, voiceName });
+        }
+    }
 
     get analyser() {
         return this._analyser;
@@ -89,8 +163,8 @@ export class NeuralLinkService {
         this.isConnecting = true;
         this.config = config;
         this.retryCount = 0;
-        
         this.disconnect(true); 
+        this.attachLifecycleHandlers();
         config.onStatusChange('CONNECTING');
 
         // Choose Engine
@@ -281,8 +355,8 @@ export class NeuralLinkService {
 
     private startWatchdog() {
         this.audioCheckInterval = setInterval(() => {
-            if (this.outputCtx?.state === 'suspended') this.outputCtx.resume();
-            if (this.inputCtx?.state === 'suspended') this.inputCtx.resume();
+            try { if (this.outputCtx?.state === 'suspended') this.outputCtx.resume(); } catch (_) {}
+            try { if (this.inputCtx?.state === 'suspended') this.inputCtx.resume(); } catch (_) {}
         }, 2000);
     }
 
@@ -309,7 +383,12 @@ export class NeuralLinkService {
             noiseSuppression: mode !== 'HIGH_FIDELITY'
         };
 
-        this.activeStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+        try {
+            this.activeStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+        } catch (e: any) {
+            this.config?.onStatusChange('ERROR', 'Microphone permission denied or unavailable.');
+            throw e;
+        }
     }
 
     private startAudioInputStream(sessionPromise: Promise<any>) {
@@ -397,6 +476,7 @@ export class NeuralLinkService {
     disconnect(silent: boolean = false) {
         this.isConnected = false;
         this.isConnecting = false;
+        this.detachLifecycleHandlers();
 
         if (this.audioCheckInterval) {
             clearInterval(this.audioCheckInterval);
@@ -424,10 +504,12 @@ export class NeuralLinkService {
         }
 
         if (this.inputCtx && this.inputCtx.state === 'running') { try { this.inputCtx.suspend(); } catch(e){} }
+        if (this.outputCtx && this.outputCtx.state === 'running') { try { this.outputCtx.suspend(); } catch(e){} }
         
         this.sources.forEach(s => { try { s.stop(); } catch(e){} });
         this.sources.clear();
         this.nextStartTime = 0;
+        this.closeContexts();
         
         if (!silent && this.config) {
             this.config.onStatusChange('IDLE');

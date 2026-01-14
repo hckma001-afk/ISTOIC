@@ -46,7 +46,11 @@ export const useChatStorage = () => {
     const updateMessage = useCallback((threadId: string, messageId: string, updates: Partial<ChatMessage>) => {
         setThreads(prev => prev.map(t => t.id === threadId ? {
             ...t,
-            messages: t.messages.map(m => m.id === messageId ? { ...m, ...updates } : m)
+            messages: t.messages.map(m => {
+                if (m.id !== messageId) return m;
+                const nextMetadata = updates.metadata ? { ...m.metadata, ...updates.metadata } : m.metadata;
+                return { ...m, ...updates, metadata: nextMetadata };
+            })
         } : t));
     }, [setThreads]);
 
