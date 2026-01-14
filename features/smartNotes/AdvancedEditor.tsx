@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { HANISAH_KERNEL } from '../../services/melsaKernel';
 import { type TaskItem } from '../../types';
 import { TRANSLATIONS, getLang } from '../../services/i18n';
+import { sanitizeInput } from '../../utils/securityHelper';
 
 interface AdvancedEditorProps {
   initialContent: string;
@@ -363,16 +364,17 @@ export const AdvancedEditor: React.FC<AdvancedEditorProps> = ({
 
   const applyHanisahResult = (mode: 'REPLACE' | 'INSERT' = 'REPLACE') => {
     if (!hanisahResult || !editorRef.current) return;
+    const safeResult = sanitizeInput(hanisahResult);
     editorRef.current.focus();
     if (selectionRange && selectedText) {
         const selection = window.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(selectionRange);
-        if (mode === 'REPLACE') document.execCommand('insertHTML', false, hanisahResult.replace(/\n/g, '<br>'));
-        else { selectionRange.collapse(false); document.execCommand('insertHTML', false, " " + hanisahResult.replace(/\n/g, '<br>')); }
+        if (mode === 'REPLACE') document.execCommand('insertHTML', false, safeResult.replace(/\n/g, '<br>'));
+        else { selectionRange.collapse(false); document.execCommand('insertHTML', false, " " + safeResult.replace(/\n/g, '<br>')); }
     } else {
-        if (mode === 'REPLACE') { const formatted = hanisahResult.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join(''); editorRef.current.innerHTML = formatted; }
-        else document.execCommand('insertHTML', false, `<br>${hanisahResult.replace(/\n/g, '<br>')}`);
+        if (mode === 'REPLACE') { const formatted = safeResult.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join(''); editorRef.current.innerHTML = formatted; }
+        else document.execCommand('insertHTML', false, `<br>${safeResult.replace(/\n/g, '<br>')}`);
     }
     triggerAutoSave();
     updateStatsAndFormats();
@@ -675,7 +677,16 @@ export const AdvancedEditor: React.FC<AdvancedEditorProps> = ({
                         <span className="text-[9px] font-black text-skin-muted uppercase tracking-[0.2em]">RESULT_MATRIX</span>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scroll p-6 md:p-8">
-                        {hanisahResult ? <div className="prose dark:prose-invert prose-sm max-w-none text-skin-text leading-relaxed bg-skin-card p-6 rounded-2xl border border-skin-border shadow-sm" dangerouslySetInnerHTML={{ __html: hanisahResult.replace(/\n/g, '<br/>') }} /> : <div className="h-full flex flex-col items-center justify-center opacity-30 text-center gap-4"><Sparkles size={48} strokeWidth={1} /><p className="text-[10px] font-black uppercase tracking-[0.3em]">AWAITING_INSTRUCTION</p></div>}
+                        {hanisahResult ? (
+                            <div className="prose dark:prose-invert prose-sm max-w-none text-skin-text leading-relaxed bg-skin-card p-6 rounded-2xl border border-skin-border shadow-sm whitespace-pre-wrap break-words">
+                                {sanitizeInput(hanisahResult)}
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center opacity-30 text-center gap-4">
+                                <Sparkles size={48} strokeWidth={1} />
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em]">AWAITING_INSTRUCTION</p>
+                            </div>
+                        )}
                     </div>
                     {hanisahResult && <div className="p-4 border-t border-skin-border bg-skin-card flex gap-3">
                         <button onClick={() => applyHanisahResult('INSERT')} className="flex-1 py-3 bg-skin-surface hover:bg-skin-surface-hover text-skin-text rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">INSERT BELOW</button>

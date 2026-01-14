@@ -5,9 +5,7 @@ const config: CapacitorConfig = {
   appName: 'ISTOIC',
   webDir: 'dist',
   bundledWebRuntime: false,
-  server: {
-    androidScheme: 'https'
-  }
+  // HAPUS server block supaya pakai scheme default "capacitor://"
 };
 
 export default config;

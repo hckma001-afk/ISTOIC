@@ -567,7 +567,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value.slice(0, 6))}
                 className="w-full bg-[#121214] border border-white/10 rounded-2xl py-5 text-center text-3xl font-black text-white tracking-[0.5em] focus:border-amber-500 outline-none"
-                placeholder="••••"
+                placeholder="****"
               />
 
               {error && <p className="text-red-500 text-[10px] font-bold">{error}</p>}
@@ -625,7 +625,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                     className={`w-full bg-[#121214] border rounded-2xl py-5 text-center text-3xl font-black text-white tracking-[0.5em] focus:outline-none transition-all placeholder:text-neutral-800 ${
                       error ? "border-red-500/50" : "border-white/10 focus:border-emerald-500"
                     }`}
-                    placeholder="••••••"
+                    placeholder="******"
                     disabled={loading}
                     autoComplete="off"
                   />

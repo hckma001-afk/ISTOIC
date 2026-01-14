@@ -1,8 +1,16 @@
 
-const CACHE_NAME = 'istoic-cache-v29';
+const CACHE_NAME = 'istoic-cache-v30';
 const OFFLINE_URL = '/index.html';
+const CORE_ASSETS = [
+  OFFLINE_URL,
+  '/manifest.json',
+  '/index.css'
+];
 
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).catch(() => Promise.resolve())
+  );
   self.skipWaiting();
 });
 
@@ -17,6 +25,45 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+
+  // Only manage same-origin requests
+  if (url.origin !== self.location.origin) return;
+
+  // Navigation requests: fall back to offline shell
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(OFFLINE_URL, copy)).catch(() => {});
+        return response;
+      }).catch(async () => {
+        const cached = await caches.match(OFFLINE_URL);
+        return cached || Response.error();
+      })
+    );
+    return;
+  }
+
+  // Static assets: stale-while-revalidate
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const fetchPromise = fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => cached);
+      return cached || fetchPromise;
+    })
   );
 });
 

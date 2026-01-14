@@ -43,9 +43,9 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = AUTH_TIMEOUT_MS)
       });
   });
 
-const isValidEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
+export const isValidEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
-const normalizeAuthError = (error: any): string => {
+export const normalizeAuthError = (error: any): string => {
   const message = error?.message || 'Terjadi kesalahan. Coba lagi.';
   const code = error?.code || '';
 
@@ -190,7 +190,7 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={authStyles.inputIconWrap}
-              placeholder="••••••••"
+              placeholder="********"
               autoComplete="current-password"
             />
             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />

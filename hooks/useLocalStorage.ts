@@ -26,7 +26,9 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
         const valueToStore = value instanceof Function ? value(prevValue) : value;
 
         try {
-          if (typeof window !== 'undefined') {
+          const native = isNative();
+
+          if (!native && typeof window !== 'undefined') {
             window.localStorage.setItem(key, JSON.stringify(valueToStore));
             window.dispatchEvent(
               new CustomEvent('local-storage-update', {
@@ -35,10 +37,14 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
             );
           }
 
-          if (isNative()) {
+          if (native) {
             Preferences.set({ key, value: JSON.stringify(valueToStore) }).catch((error) => {
               console.warn(`Error saving native storage key "${key}":`, error);
             });
+            // Avoid leaking sensitive values to Web Storage on native platforms
+            if (typeof window !== 'undefined') {
+              window.localStorage.removeItem(key);
+            }
           }
         } catch (error) {
           console.warn(`Error saving localStorage key "${key}":`, error);

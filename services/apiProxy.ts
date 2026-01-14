@@ -1,6 +1,7 @@
 
 import { z } from 'zod';
 import { debugService } from './debugService';
+import { apiClient } from './apiClient';
 
 /**
  * IStoicAI v101.0 ENTERPRISE PROXY
@@ -40,23 +41,6 @@ export type ValidatedNote = z.infer<typeof NoteSchema>;
 const USE_SECURE_BACKEND = true; // Hardcoded to TRUE for V101 security mandate
 const BACKEND_URL = '/api/chat';
 
-// --- RELIABILITY UTILITIES ---
-
-async function fetchWithBackoff(url: string, options: RequestInit, retries = 3, backoffMs = 1000): Promise<Response> {
-  try {
-    const res = await fetch(url, options);
-    if (!res.ok && res.status >= 500) {
-      throw new Error(`Server Error: ${res.status}`);
-    }
-    return res;
-  } catch (err) {
-    if (retries <= 1) throw err;
-    debugService.log('WARN', 'PROXY', 'RETRY', `Retrying request...`, { url, retriesLeft: retries - 1 });
-    await new Promise(resolve => setTimeout(resolve, backoffMs));
-    return fetchWithBackoff(url, options, retries - 1, backoffMs * 2);
-  }
-}
-
 class ApiProxyService {
   
   async generateText(
@@ -69,21 +53,17 @@ class ApiProxyService {
     debugService.log('INFO', 'PROXY', 'OUTBOUND', `Routing to ${BACKEND_URL} [${provider}]`);
 
     try {
-        const response = await fetchWithBackoff(BACKEND_URL, {
+        const response = await apiClient.requestRaw({
+            path: BACKEND_URL,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
+            body: { 
                 message: prompt, 
                 provider, 
                 modelId, 
                 context 
-            })
+            },
+            timeoutMs: 20000
         });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Backend Error (${response.status}): ${errorText}`);
-        }
 
         // CONSUME STREAM
         const reader = response.body?.getReader();
@@ -106,7 +86,8 @@ class ApiProxyService {
 
     } catch (serverError: any) {
         console.error("Server Proxy Failed:", serverError);
-        throw new Error(`Secure Backend Failure: ${serverError.message}`);
+        const details = serverError.details || serverError.message;
+        throw new Error(`Secure Backend Failure: ${details}`);
     }
   }
 

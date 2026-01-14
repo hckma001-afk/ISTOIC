@@ -100,12 +100,12 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes }) => {
     
     const [showPinModal, setShowPinModal] = useState(false);
     const [syncLevel, setSyncLevel] = useState(0);
-    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
     const vaultEnabled = isVaultConfigEnabled(personaMode);
 
     useEffect(() => {
-        const handleStatus = () => setIsOnline(navigator.onLine);
+        const handleStatus = () => setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
         window.addEventListener('online', handleStatus);
         window.addEventListener('offline', handleStatus);
 
@@ -174,6 +174,13 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes }) => {
         control: language === 'en' ? "SECURITY" : "KEAMANAN",
     };
 
+    const recentNotes = Array.isArray(notes) ? notes.slice(0, 3) : [];
+    const formatDate = (iso?: string) => {
+        if (!iso) return 'UNKNOWN';
+        const date = new Date(iso);
+        return isNaN(date.getTime()) ? 'UNKNOWN' : date.toLocaleDateString();
+    };
+
     return (
         <div className="h-full w-full overflow-y-auto custom-scroll flex flex-col px-4 pb-32 pt-[calc(env(safe-area-inset-top)+1.5rem)] md:px-8 md:pt-12 md:pb-40 lg:px-12 animate-fade-in bg-noise relative z-10">
             <VaultPinModal 
@@ -186,7 +193,7 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes }) => {
                 
                 <header className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-10 animate-slide-up pb-2">
                     <div className="space-y-6 md:space-y-8 flex-1 w-full">
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4" aria-live="polite">
                             <div className="px-4 py-2 rounded-xl bg-skin-card border border-skin-border backdrop-blur-md tech-mono text-[9px] font-black uppercase text-accent tracking-[0.3em] shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] flex items-center gap-2">
                                 <Fingerprint size={12} /> PERSONAL_OS_v101.0
                             </div>
@@ -269,20 +276,27 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes }) => {
                         </div>
                         
                         <div className="space-y-3">
-                            {notes.slice(0, 3).map((note, i) => (
-                                <div key={note.id} onClick={handleRecentLogClick} role="button" tabIndex={0} className="group flex items-center gap-6 p-4 rounded-[24px] bg-skin-surface border border-transparent hover:border-accent/20 hover:bg-skin-card transition-all cursor-pointer">
+                            {recentNotes.map((note) => (
+                                <div 
+                                    key={note.id} 
+                                    onClick={handleRecentLogClick} 
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRecentLogClick(); } }}
+                                    role="button" 
+                                    tabIndex={0} 
+                                    className="group flex items-center gap-6 p-4 rounded-[24px] bg-skin-surface border border-transparent hover:border-accent/20 hover:bg-skin-card transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                                >
                                     <div className="w-12 h-12 rounded-xl bg-skin-surface-hover flex items-center justify-center text-skin-muted group-hover:text-accent group-hover:scale-110 transition-transform shrink-0">
                                         <FileText size={20} strokeWidth={2} />
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <h4 className="text-sm font-bold text-skin-text uppercase tracking-tight truncate">{note.title || "UNTITLED_ENTRY"}</h4>
-                                        <p className="text-[10px] tech-mono text-skin-muted truncate mt-0.5">ID: {note.id.slice(0,8)} // {new Date(note.updated).toLocaleDateString()}</p>
+                                        <p className="text-[10px] tech-mono text-skin-muted truncate mt-0.5">ID: {note.id.slice(0,8)} // {formatDate(note.updated)}</p>
                                     </div>
                                     <div className="px-3 py-1 rounded-lg bg-skin-surface-hover text-[9px] font-black text-skin-muted uppercase tracking-widest group-hover:bg-accent/10 group-hover:text-accent transition-colors">OPEN</div>
                                 </div>
                             ))}
-                            {notes.length === 0 && (
-                                <div className="text-center py-12 opacity-40 text-[10px] font-black uppercase tracking-widest text-skin-muted">NO_DATA_LOGGED</div>
+                            {recentNotes.length === 0 && (
+                                <div className="text-center py-12 opacity-60 text-[10px] font-black uppercase tracking-widest text-skin-muted">NO_DATA_LOGGED</div>
                             )}
                         </div>
                     </div>

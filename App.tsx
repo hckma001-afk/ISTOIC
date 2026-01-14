@@ -1,5 +1,7 @@
 
-import React, { useState, useEffect, Suspense, lazy, useTransition } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useTransition, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type FeatureID } from './constants';
@@ -239,6 +241,7 @@ const App: React.FC = () => {
     const [notes, setNotes] = useIDB<Note[]>('notes', []);
     const [sessionMode, setSessionMode] = useState<SessionMode>('AUTH');
     const [identity] = useLocalStorage<IStokUserIdentity | null>('istok_user_identity', null);
+    const returnToRef = useRef<SessionMode | null>(null);
     
     useIndexedDBSync(notes);
     const { peer, incomingConnection, clearIncoming } = useGlobalPeer(identity);
@@ -296,45 +299,102 @@ const App: React.FC = () => {
             window.removeEventListener('popstate', handleDeepLink);
         };
     }, []);
+
+    // If a secure mode is requested without identity, force authentication and remember target
+    useEffect(() => {
+        if (!identity && (sessionMode === 'ISTOIC' || sessionMode === 'ISTOK' || sessionMode === 'TELEPONAN')) {
+            returnToRef.current = sessionMode;
+            setSessionMode('AUTH');
+        }
+    }, [identity, sessionMode]);
+
+    const handleAuthSuccess = useCallback(() => {
+        const target = returnToRef.current;
+        returnToRef.current = null;
+        setSessionMode(target && target !== 'AUTH' ? target : 'SELECT');
+    }, []);
+
+    const handleSelectMode = useCallback((mode: SessionMode) => {
+        returnToRef.current = null;
+        setSessionMode(mode);
+    }, []);
+
+    // ANDROID BACK BUTTON HANDLER (Capacitor)
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) return;
+        const backHandler = CapApp.addListener('backButton', ({ canGoBack }) => {
+            if (isDebugOpen) {
+                setIsDebugOpen(false);
+                return;
+            }
+            if (incomingConnection) {
+                clearIncoming();
+                return;
+            }
+            if (sessionMode === 'ISTOK' || sessionMode === 'TELEPONAN') {
+                setSessionMode('ISTOIC');
+                return;
+            }
+            if (sessionMode === 'ISTOIC') {
+                if (canGoBack) {
+                    window.history.back();
+                } else {
+                    setSessionMode('SELECT');
+                }
+            }
+        });
+        return () => {
+            backHandler.remove();
+        };
+    }, [sessionMode, isDebugOpen, incomingConnection, clearIncoming]);
     
-    if (sessionMode === 'AUTH') return <AuthView onAuthSuccess={() => setSessionMode('SELECT')} />;
-    if (sessionMode === 'SELECT') return <AppSelector onSelect={(mode) => setSessionMode(mode)} />;
-
-    if (sessionMode === 'ISTOK') {
+    const renderSession = () => {
+        if (sessionMode === 'AUTH') {
+            return <ErrorBoundary viewName="AUTH_SHELL"><AuthView onAuthSuccess={handleAuthSuccess} /></ErrorBoundary>;
+        }
+        if (sessionMode === 'SELECT') {
+            return <ErrorBoundary viewName="SELECTOR"><AppSelector onSelect={handleSelectMode} /></ErrorBoundary>;
+        }
+        if (sessionMode === 'ISTOK') {
+            return (
+                <Suspense fallback={<div className="h-screen w-screen bg-black flex items-center justify-center text-red-500 font-mono">INITIALIZING_SECURE_LAYER...</div>}>
+                    <ErrorBoundary viewName="ISTOK_SECURE_CHANNEL">
+                        <IStokView onLogout={() => setSessionMode('AUTH')} globalPeer={peer} initialAcceptedConnection={acceptedConnection} />
+                    </ErrorBoundary>
+                </Suspense>
+            );
+        }
+        if (sessionMode === 'TELEPONAN') {
+            return (
+                <Suspense fallback={<div className="h-screen w-screen bg-black flex items-center justify-center text-green-500 font-mono">INITIALIZING_SECURE_VOICE...</div>}>
+                    <ErrorBoundary viewName="TELEPONAN_SECURE_CALL">
+                        <TeleponanView onClose={() => setSessionMode('ISTOIC')} />
+                    </ErrorBoundary>
+                </Suspense>
+            );
+        }
         return (
-            <Suspense fallback={<div className="h-screen w-screen bg-black flex items-center justify-center text-red-500 font-mono">INITIALIZING_SECURE_LAYER...</div>}>
-                <ErrorBoundary viewName="ISTOK_SECURE_CHANNEL">
-                    <IStokView onLogout={() => setSessionMode('AUTH')} globalPeer={peer} initialAcceptedConnection={acceptedConnection} />
-                </ErrorBoundary>
-            </Suspense>
+            <GenerativeSessionProvider>
+                <LiveSessionProvider notes={notes} setNotes={setNotes}>
+                    {incomingConnection && (
+                        <ConnectionNotification 
+                            identity={requestIdentity}
+                            peerId={incomingConnection.conn.peer}
+                            onAccept={() => handleAcceptConnection(incomingConnection)}
+                            onDecline={() => { incomingConnection.conn.close(); clearIncoming(); }}
+                            isProcessing={!incomingConnection.firstData} 
+                        />
+                    )}
+                    <AppContent notes={notes} setNotes={setNotes} />
+                </LiveSessionProvider>
+            </GenerativeSessionProvider>
         );
-    }
-
-    if (sessionMode === 'TELEPONAN') {
-        return (
-            <Suspense fallback={<div className="h-screen w-screen bg-black flex items-center justify-center text-green-500 font-mono">INITIALIZING_SECURE_VOICE...</div>}>
-                <ErrorBoundary viewName="TELEPONAN_SECURE_CALL">
-                    <TeleponanView onClose={() => setSessionMode('ISTOIC')} />
-                </ErrorBoundary>
-            </Suspense>
-        );
-    }
+    };
 
     return (
-        <GenerativeSessionProvider>
-            <LiveSessionProvider notes={notes} setNotes={setNotes}>
-                {incomingConnection && (
-                    <ConnectionNotification 
-                        identity={requestIdentity}
-                        peerId={incomingConnection.conn.peer}
-                        onAccept={() => handleAcceptConnection(incomingConnection)}
-                        onDecline={() => { incomingConnection.conn.close(); clearIncoming(); }}
-                        isProcessing={!incomingConnection.firstData} 
-                    />
-                )}
-                <AppContent notes={notes} setNotes={setNotes} />
-            </LiveSessionProvider>
-        </GenerativeSessionProvider>
+        <ErrorBoundary viewName="APP_ROOT">
+            {renderSession()}
+        </ErrorBoundary>
     );
 };
 
