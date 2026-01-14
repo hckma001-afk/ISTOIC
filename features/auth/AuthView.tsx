@@ -158,6 +158,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         return;
       }
 
+      // Ensure persistence before any listeners (important for iOS PWA)
+      try {
+        await ensureAuthPersistence("local");
+      } catch (e) {
+        console.warn("Auth persistence setup failed, continuing with session scope.", e);
+      }
+
       if (identity && identity.istokId) {
         if (isSystemPinConfigured()) {
           if (bioEnabled && !isHardLocked) {

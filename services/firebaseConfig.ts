@@ -6,6 +6,7 @@ import {
   GoogleAuthProvider,
   setPersistence,
   browserLocalPersistence,
+  indexedDBLocalPersistence,
   browserSessionPersistence,
   signInWithPopup,
   signInWithRedirect,
@@ -64,8 +65,20 @@ export { signInWithPopup, signInWithRedirect, signOut };
 export const ensureAuthPersistence = async (mode: "local" | "session" = "local") => {
   if (!auth) return;
   try {
-    const persistence = mode === "session" ? browserSessionPersistence : browserLocalPersistence;
-    await setPersistence(auth, persistence);
+    if (mode === "session") {
+      await setPersistence(auth, browserSessionPersistence);
+      return;
+    }
+
+    // Prefer indexedDB for iOS PWA stability; fallback gracefully
+    try {
+      await setPersistence(auth, indexedDBLocalPersistence);
+      return;
+    } catch (e) {
+      console.warn("[FIREBASE] indexedDB persistence failed, falling back to browserLocalPersistence.", e);
+    }
+
+    await setPersistence(auth, browserLocalPersistence);
   } catch (error) {
     console.warn("[FIREBASE] Failed to set auth persistence.", error);
   }
