@@ -250,24 +250,32 @@ export const IstokIdentityService = {
   finalizeRedirectIfAny: async (): Promise<IStokUserIdentity | null> => {
     if (!auth || !db) {
       sessionStorage.removeItem("istok_login_redirect");
+      sessionStorage.removeItem("istok_redirect_processing");
       return null;
     }
 
     // Prevent multiple simultaneous calls
     const redirectKey = "istok_redirect_processing";
     if (sessionStorage.getItem(redirectKey) === "true") {
-      return null;
+      // Wait a bit if already processing
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Check again - if still processing, return null to avoid deadlock
+      if (sessionStorage.getItem(redirectKey) === "true") {
+        console.warn("[ISTOK_AUTH] Redirect already being processed, skipping");
+        return null;
+      }
     }
     sessionStorage.setItem(redirectKey, "true");
 
     try {
       await ensureAuthPersistence("local");
 
-      const result = await withTimeout(getRedirectResult(auth), 5000);
+      const result = await withTimeout(getRedirectResult(auth), 8000);
       if (!result?.user) {
         // Clear flags if no result
         sessionStorage.removeItem("istok_login_redirect");
         sessionStorage.removeItem(redirectKey);
+        console.log("[ISTOK_AUTH] No redirect result found");
         return null;
       }
 
@@ -279,10 +287,12 @@ export const IstokIdentityService = {
       sessionStorage.removeItem(redirectKey);
       
       if (existing) {
+        console.log("[ISTOK_AUTH] Redirect finalized, user found:", existing.istokId);
         return existing;
       }
 
       const base = normalizeUser(user);
+      console.log("[ISTOK_AUTH] Redirect finalized, new user:", user.uid);
       return {
         ...base,
         istokId: "",
@@ -294,6 +304,7 @@ export const IstokIdentityService = {
       // Always clear flags on error to prevent infinite loops
       sessionStorage.removeItem("istok_login_redirect");
       sessionStorage.removeItem(redirectKey);
+      console.error("[ISTOK_AUTH] Error finalizing redirect:", err);
       return null;
     }
   },

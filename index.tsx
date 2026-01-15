@@ -65,23 +65,38 @@ if (Capacitor.isNativePlatform()) {
  */
 if (!Capacitor.isNativePlatform() && isIosPwa()) {
   // Check for redirect result immediately on load
-  getRedirectResult(auth)
-    .then((result) => {
-      if (result?.user) {
-        console.log('[PWA_REDIRECT] User signed in via redirect');
-        // Clear any stale flags
+  // Only check if redirect is pending to avoid unnecessary checks
+  const redirectPending = sessionStorage.getItem("istok_login_redirect") === "pending";
+  
+  if (redirectPending) {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('[PWA_REDIRECT] User signed in via redirect');
+          // Clear any stale flags
+          sessionStorage.removeItem("istok_login_redirect");
+          sessionStorage.removeItem("istok_redirect_processed");
+          sessionStorage.removeItem("istok_redirect_processing");
+          // Set a flag to indicate redirect was handled at index level
+          sessionStorage.setItem("istok_redirect_handled", "true");
+          // Reload to trigger auth state update
+          window.location.reload();
+        } else {
+          // No result, clear flags to prevent loop
+          console.log('[PWA_REDIRECT] No redirect result found');
+          sessionStorage.removeItem("istok_login_redirect");
+          sessionStorage.removeItem("istok_redirect_processed");
+          sessionStorage.removeItem("istok_redirect_processing");
+        }
+      })
+      .catch((error) => {
+        console.warn('[PWA_REDIRECT] No redirect result or error:', error);
+        // Clear flags on error to prevent loops
         sessionStorage.removeItem("istok_login_redirect");
         sessionStorage.removeItem("istok_redirect_processed");
-        // Reload to trigger auth state update
-        window.location.reload();
-      }
-    })
-    .catch((error) => {
-      console.warn('[PWA_REDIRECT] No redirect result or error:', error);
-      // Clear flags on error to prevent loops
-      sessionStorage.removeItem("istok_login_redirect");
-      sessionStorage.removeItem("istok_redirect_processed");
-    });
+        sessionStorage.removeItem("istok_redirect_processing");
+      });
+  }
 }
 
 /**
