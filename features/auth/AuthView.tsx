@@ -225,16 +225,20 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         console.warn("Auth persistence setup failed, continuing with session scope.", e);
       }
 
+      // Check if user has identity but no PIN configured (new user)
       if (identity && identity.istokId) {
-        if (isSystemPinConfigured()) {
-          if (bioEnabled && !isHardLocked) {
-            setStage("BIOMETRIC_SCAN");
-            handleBiometricScan();
-          } else {
-            setStage("LOCKED");
-          }
-        } else {
+        // Always check PIN first - new users should setup PIN
+        if (!isSystemPinConfigured()) {
           setStage("SETUP_PIN");
+          isInitializing = false;
+          return;
+        }
+        // Only go to LOCKED if PIN is already configured
+        if (bioEnabled && !isHardLocked) {
+          setStage("BIOMETRIC_SCAN");
+          handleBiometricScan();
+        } else {
+          setStage("LOCKED");
         }
         isInitializing = false;
         return;
@@ -257,15 +261,17 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           if (redirectIdentity.istokId) {
             setIdentity(redirectIdentity);
 
-            if (isSystemPinConfigured()) {
+            // Always check PIN first - new users should setup PIN
+            if (!isSystemPinConfigured()) {
+              setStage("SETUP_PIN");
+            } else {
+              // Only go to LOCKED if PIN is already configured
               if (bioEnabled && !isHardLocked) {
                 setStage("BIOMETRIC_SCAN");
                 handleBiometricScan();
               } else {
                 setStage("LOCKED");
               }
-            } else {
-              setStage("SETUP_PIN");
             }
             isInitializing = false;
             return;
@@ -311,15 +317,17 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
               const data = snap.data() as IStokUserIdentity;
               setIdentity(data);
 
-              if (isSystemPinConfigured()) {
+              // Always check PIN first - new users should setup PIN
+              if (!isSystemPinConfigured()) {
+                setStage("SETUP_PIN");
+              } else {
+                // Only go to LOCKED if PIN is already configured
                 if (bioEnabled && !isHardLocked) {
                   setStage("BIOMETRIC_SCAN");
                   handleBiometricScan();
                 } else {
                   setStage("LOCKED");
                 }
-              } else {
-                setStage("SETUP_PIN");
               }
             } else {
               const tmp: IStokUserIdentity = {

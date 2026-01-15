@@ -5,7 +5,8 @@ import {
     User, UserCheck, Database, Palette, Globe, Shield, 
     X, Check, LogOut, ChevronRight, Moon, Sun, Monitor,
     Save, RefreshCw, Cpu, Zap, Wifi, Activity, Layers, Download, Upload,
-    Fingerprint, Lock, Key, Brain, Mic, Terminal, Sparkles, Server, ToggleLeft, ToggleRight, Edit3, CheckCircle2
+    Fingerprint, Lock, Key, Brain, Mic, Terminal, Sparkles, Server, ToggleLeft, ToggleRight, Edit3, CheckCircle2,
+    KeyRound
 } from 'lucide-react';
 import { TRANSLATIONS, getLang } from '../../services/i18n';
 import { IstokIdentityService } from '../istok/services/istokIdentity';
@@ -24,6 +25,20 @@ import { Input, Textarea } from '../../components/ui/Input';
 import { Dialog } from '../../components/ui/Dialog';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
+import { FormField } from '../../components/ui/FormField';
+import { authStyles } from '../auth/authStyles';
+import { auth } from '../../services/firebaseConfig';
+import { 
+    updatePassword, 
+    reauthenticateWithCredential, 
+    EmailAuthProvider, 
+    sendPasswordResetEmail 
+} from 'firebase/auth';
+import { 
+    isSystemPinConfigured, 
+    setSystemPin, 
+    verifySystemPin 
+} from '../../utils/crypto';
 
 interface SettingsViewProps {
     onNavigate: (feature: FeatureID) => void;
@@ -177,6 +192,22 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
     const [idUpdateMsg, setIdUpdateMsg] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     
+    // Password Change State
+    const [showChangePassword, setShowChangePassword] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordError, setPasswordError] = useState('');
+    const [passwordSuccess, setPasswordSuccess] = useState('');
+    
+    // PIN Change State
+    const [showChangePin, setShowChangePin] = useState(false);
+    const [currentPin, setCurrentPin] = useState('');
+    const [newPin, setNewPin] = useState('');
+    const [confirmPin, setConfirmPin] = useState('');
+    const [pinError, setPinError] = useState('');
+    const [pinSuccess, setPinSuccess] = useState('');
+    
     // Derived
     const currentLang = getLang();
     const t = TRANSLATIONS[currentLang].settings;
@@ -288,6 +319,137 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
     const handleProviderToggle = useCallback((id: string) => {
         setProviderVisibility(prev => ({ ...prev, [id]: !prev[id] }));
     }, [setProviderVisibility]);
+
+    const handleChangePassword = useCallback(async () => {
+        if (!auth || !auth.currentUser || !auth.currentUser.email) {
+            setPasswordError('User not authenticated.');
+            return;
+        }
+
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            setPasswordError('All fields are required.');
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            setPasswordError('Password must be at least 8 characters.');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            setPasswordError('New passwords do not match.');
+            return;
+        }
+
+        setPasswordError('');
+        setPasswordSuccess('');
+        setIsSaving(true);
+
+        try {
+            const user = auth.currentUser;
+            if (!user || !user.email) {
+                setPasswordError('User not authenticated.');
+                return;
+            }
+
+            // Re-authenticate user
+            const credential = EmailAuthProvider.credential(user.email, currentPassword);
+            await reauthenticateWithCredential(user, credential);
+            
+            // Update password
+            await updatePassword(user, newPassword);
+            
+            // Send confirmation email
+            try {
+                await sendPasswordResetEmail(auth, user.email, {
+                    url: window.location.origin,
+                    handleCodeInApp: false,
+                });
+            } catch (e) {
+                console.warn('Failed to send confirmation email', e);
+            }
+            
+            setPasswordSuccess('Password changed successfully. Confirmation email sent.');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+            setTimeout(() => {
+                setShowChangePassword(false);
+                setPasswordSuccess('');
+            }, 2000);
+        } catch (e: any) {
+            const errorMsg = e?.message || 'Failed to change password.';
+            if (errorMsg.includes('wrong-password') || errorMsg.includes('invalid-credential')) {
+                setPasswordError('Current password is incorrect.');
+            } else {
+                setPasswordError(errorMsg);
+            }
+        } finally {
+            setIsSaving(false);
+        }
+    }, [currentPassword, newPassword, confirmPassword]);
+
+    const handleChangePin = useCallback(async () => {
+        if (!isSystemPinConfigured()) {
+            setPinError('PIN not configured. Please set up PIN first.');
+            return;
+        }
+
+        if (!currentPin || !newPin || !confirmPin) {
+            setPinError('All fields are required.');
+            return;
+        }
+
+        if (newPin.length < 4) {
+            setPinError('PIN must be at least 4 digits.');
+            return;
+        }
+
+        if (newPin !== confirmPin) {
+            setPinError('New PINs do not match.');
+            return;
+        }
+
+        // Verify current PIN
+        const isValid = await verifySystemPin(currentPin);
+        if (!isValid) {
+            setPinError('Current PIN is incorrect.');
+            return;
+        }
+
+        setPinError('');
+        setPinSuccess('');
+        setIsSaving(true);
+
+        try {
+            await setSystemPin(newPin);
+            setPinSuccess('PIN changed successfully.');
+            setCurrentPin('');
+            setNewPin('');
+            setConfirmPin('');
+            
+            // Send email notification if user has email
+            if (auth && auth.currentUser && auth.currentUser.email) {
+                try {
+                    await sendPasswordResetEmail(auth, auth.currentUser.email, {
+                        url: window.location.origin,
+                        handleCodeInApp: false,
+                    });
+                } catch (e) {
+                    console.warn('Failed to send PIN change notification email', e);
+                }
+            }
+            
+            setTimeout(() => {
+                setShowChangePin(false);
+                setPinSuccess('');
+            }, 2000);
+        } catch (e: any) {
+            setPinError(e?.message || 'Failed to change PIN.');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [currentPin, newPin, confirmPin]);
 
     return (
         <div className="h-full flex flex-col px-4 pt-[calc(env(safe-area-inset-top)+1.5rem)] md:px-8 md:pt-12 lg:px-12 overflow-hidden font-sans animate-fade-in text-text relative">
@@ -587,15 +749,164 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                     <div className="bento-card-content">
                         <SettingsSection title="Security" icon={<Lock size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 shadow-[var(--shadow-soft)] space-y-4">
-                        <div className="flex items-center justify-between p-4 bg-surface-2 rounded-xl border border-border/70">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-surface rounded-lg text-text"><Key size={16}/></div>
-                                <div>
-                                    <div className="section-title text-text">Vault PIN</div>
-                                    <div className="caption text-text-muted">SHA-256 encrypted</div>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-surface-2 rounded-xl border border-border/70">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-surface rounded-lg text-text"><KeyRound size={16}/></div>
+                                    <div>
+                                        <div className="section-title text-text">System PIN</div>
+                                        <div className="caption text-text-muted">
+                                            {isSystemPinConfigured() ? 'SHA-256 encrypted' : 'Not configured'}
+                                        </div>
+                                    </div>
                                 </div>
+                                <Button 
+                                    variant="secondary" 
+                                    size="sm"
+                                    onClick={() => setShowChangePin(!showChangePin)}
+                                >
+                                    {showChangePin ? 'Cancel' : isSystemPinConfigured() ? 'Change PIN' : 'Setup PIN'}
+                                </Button>
                             </div>
-                            <Button variant="secondary" size="sm">Reset PIN</Button>
+
+                            {showChangePin && (
+                                <div className="p-4 bg-surface-2 rounded-xl border border-border/70 space-y-4 animate-slide-up">
+                                    {isSystemPinConfigured() ? (
+                                        <>
+                                            <FormField label="Current PIN">
+                                                <input
+                                                    type="password"
+                                                    inputMode="numeric"
+                                                    value={currentPin}
+                                                    onChange={(e) => setCurrentPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                    className={authStyles.input}
+                                                    placeholder="Enter current PIN"
+                                                />
+                                            </FormField>
+                                            <FormField label="New PIN">
+                                                <input
+                                                    type="password"
+                                                    inputMode="numeric"
+                                                    value={newPin}
+                                                    onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                    className={authStyles.input}
+                                                    placeholder="Enter new PIN (min 4 digits)"
+                                                />
+                                            </FormField>
+                                            <FormField label="Confirm New PIN">
+                                                <input
+                                                    type="password"
+                                                    inputMode="numeric"
+                                                    value={confirmPin}
+                                                    onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                    className={authStyles.input}
+                                                    placeholder="Confirm new PIN"
+                                                />
+                                            </FormField>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FormField label="New PIN">
+                                                <input
+                                                    type="password"
+                                                    inputMode="numeric"
+                                                    value={newPin}
+                                                    onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                    className={authStyles.input}
+                                                    placeholder="Enter new PIN (min 4 digits)"
+                                                />
+                                            </FormField>
+                                            <FormField label="Confirm PIN">
+                                                <input
+                                                    type="password"
+                                                    inputMode="numeric"
+                                                    value={confirmPin}
+                                                    onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                    className={authStyles.input}
+                                                    placeholder="Confirm PIN"
+                                                />
+                                            </FormField>
+                                        </>
+                                    )}
+                                    {pinError && <p className="text-danger text-xs">{pinError}</p>}
+                                    {pinSuccess && <p className="text-success text-xs">{pinSuccess}</p>}
+                                    <Button
+                                        onClick={handleChangePin}
+                                        disabled={isSaving || (isSystemPinConfigured() && !currentPin) || !newPin || !confirmPin || newPin.length < 4}
+                                        variant="primary"
+                                        size="sm"
+                                        className="w-full"
+                                    >
+                                        {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
+                                        {isSaving ? 'Saving...' : isSystemPinConfigured() ? 'Change PIN' : 'Setup PIN'}
+                                    </Button>
+                                </div>
+                            )}
+
+                            {auth && auth.currentUser && auth.currentUser.email && (
+                                <>
+                                    <div className="flex items-center justify-between p-4 bg-surface-2 rounded-xl border border-border/70">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-surface rounded-lg text-text"><Lock size={16}/></div>
+                                            <div>
+                                                <div className="section-title text-text">Account Password</div>
+                                                <div className="caption text-text-muted">Firebase authentication</div>
+                                            </div>
+                                        </div>
+                                        <Button 
+                                            variant="secondary" 
+                                            size="sm"
+                                            onClick={() => setShowChangePassword(!showChangePassword)}
+                                        >
+                                            {showChangePassword ? 'Cancel' : 'Change Password'}
+                                        </Button>
+                                    </div>
+
+                                    {showChangePassword && (
+                                        <div className="p-4 bg-surface-2 rounded-xl border border-border/70 space-y-4 animate-slide-up">
+                                            <FormField label="Current Password">
+                                                <input
+                                                    type="password"
+                                                    value={currentPassword}
+                                                    onChange={(e) => setCurrentPassword(e.target.value)}
+                                                    className={authStyles.input}
+                                                    placeholder="Enter current password"
+                                                />
+                                            </FormField>
+                                            <FormField label="New Password">
+                                                <input
+                                                    type="password"
+                                                    value={newPassword}
+                                                    onChange={(e) => setNewPassword(e.target.value)}
+                                                    className={authStyles.input}
+                                                    placeholder="Enter new password (min 8 characters)"
+                                                />
+                                            </FormField>
+                                            <FormField label="Confirm New Password">
+                                                <input
+                                                    type="password"
+                                                    value={confirmPassword}
+                                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                                    className={authStyles.input}
+                                                    placeholder="Confirm new password"
+                                                />
+                                            </FormField>
+                                            {passwordError && <p className="text-danger text-xs">{passwordError}</p>}
+                                            {passwordSuccess && <p className="text-success text-xs">{passwordSuccess}</p>}
+                                            <Button
+                                                onClick={handleChangePassword}
+                                                disabled={isSaving || !currentPassword || !newPassword || !confirmPassword || newPassword.length < 8}
+                                                variant="primary"
+                                                size="sm"
+                                                className="w-full"
+                                            >
+                                                {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={14} />}
+                                                {isSaving ? 'Changing...' : 'Change Password'}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
 
                         {isBioAvailable && (

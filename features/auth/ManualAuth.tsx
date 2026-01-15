@@ -438,6 +438,43 @@ export const ForgotPin: React.FC<{ onBack: () => void; onSuccess: () => void; ex
   const [ackRisk, setAckRisk] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [emailSent, setEmailSent] = useState(false);
+
+  const handleSendEmail = async () => {
+    if (!expectedEmail || !isValidEmail(expectedEmail)) {
+      setError('Email tidak valid.');
+      return;
+    }
+
+    if (firebaseConfigError || !auth) {
+      setError('Service temporarily unavailable. Please try again later.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      await ensureAuthPersistence('local');
+      // Send password reset email as verification step
+      await withTimeout(sendPasswordResetEmail(auth, expectedEmail, {
+        url: window.location.origin,
+        handleCodeInApp: false,
+      }));
+      setEmailSent(true);
+      setInfo('Link verifikasi telah dikirim ke email Anda. Silakan cek inbox untuk melanjutkan reset PIN.');
+    } catch (e: any) {
+      const errorMsg = normalizeAuthError(e);
+      // If email not found, still allow local PIN reset with warning
+      if (errorMsg.includes('user-not-found') || errorMsg.includes('not found')) {
+        setError('Email tidak terdaftar. Anda dapat reset PIN lokal dengan risiko kehilangan data terenkripsi.');
+      } else {
+        setError(`Gagal mengirim email: ${errorMsg}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleReset = async () => {
     if (expectedEmail && emailCheck.trim().toLowerCase() !== expectedEmail.toLowerCase()) {
@@ -467,6 +504,39 @@ export const ForgotPin: React.FC<{ onBack: () => void; onSuccess: () => void; ex
     }
   };
 
+  if (emailSent) {
+    return (
+      <div className="w-full animate-slide-up">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 mx-auto bg-success/10 rounded-full flex items-center justify-center border border-success/20 mb-4 text-success">
+            <CheckCircle2 size={32} />
+          </div>
+          <h2 className={authStyles.title}>Email Terkirim</h2>
+          <p className="text-sm text-text-muted">
+            Link verifikasi telah dikirim ke <strong>{expectedEmail}</strong>. 
+            Silakan cek inbox dan ikuti instruksi untuk reset PIN.
+          </p>
+          {info && <AuthAlert tone="success" message={info} />}
+        </div>
+
+        <div className="mt-8 space-y-4">
+          <button
+            onClick={() => {
+              setEmailSent(false);
+              setInfo('');
+            }}
+            className={authStyles.buttonSecondary}
+          >
+            <ArrowLeft size={16} /> Kembali
+          </button>
+          <button onClick={onBack} className={authStyles.buttonGhost}>
+            BATAL
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full animate-slide-up">
       <div className="text-center mb-6">
@@ -484,16 +554,34 @@ export const ForgotPin: React.FC<{ onBack: () => void; onSuccess: () => void; ex
 
       <div className="space-y-4">
         {expectedEmail && (
-          <FormField label="Email akun">
-            <input
-              type="email"
-              value={emailCheck}
-              onChange={(e) => setEmailCheck(e.target.value)}
-              className={authStyles.input}
-              placeholder="Konfirmasi email akun"
-              autoComplete="email"
-            />
-          </FormField>
+          <>
+            <div className="bg-surface-2 border border-border rounded-lg p-4 mb-4">
+              <p className="text-xs text-text-muted mb-2">Email terdaftar:</p>
+              <p className="text-sm font-semibold text-text">{expectedEmail}</p>
+            </div>
+            <button
+              onClick={handleSendEmail}
+              disabled={loading}
+              className={authStyles.buttonSecondary}
+            >
+              {loading ? <Loader2 className="animate-spin" /> : <Send size={16} />} Kirim Link Verifikasi ke Email
+            </button>
+            <div className="flex items-center gap-3 px-2 text-xs text-text-muted">
+              <div className="h-px bg-[color:var(--border)] flex-1"></div>
+              <span className="font-semibold uppercase tracking-[0.2em]">atau</span>
+              <div className="h-px bg-[color:var(--border)] flex-1"></div>
+            </div>
+            <FormField label="Konfirmasi email akun">
+              <input
+                type="email"
+                value={emailCheck}
+                onChange={(e) => setEmailCheck(e.target.value)}
+                className={authStyles.input}
+                placeholder="Masukkan email untuk verifikasi"
+                autoComplete="email"
+              />
+            </FormField>
+          </>
         )}
         <FormField label="PIN baru">
           <input
@@ -518,7 +606,7 @@ export const ForgotPin: React.FC<{ onBack: () => void; onSuccess: () => void; ex
 
         <button
           onClick={handleReset}
-          disabled={loading}
+          disabled={loading || newPin.length < 4 || !ackRisk}
           className={authStyles.buttonPrimary}
         >
           {loading ? <Loader2 className="animate-spin" /> : <RefreshCw size={16} />} ATUR ULANG PIN
