@@ -14,6 +14,13 @@ type RetryContext = {
   threadId?: string;
 };
 
+type MessageMetadata = {
+  createdAt?: string;
+  status?: 'success' | 'loading' | 'error';
+  model?: string;
+  retryContext?: RetryContext;
+};
+
 const TypingIndicator = ({ personaMode }: { personaMode: 'hanisah' | 'stoic' }) => (
   <div className="flex justify-start mb-5 px-3 md:px-6 animate-fade-in w-full">
     <div className="flex flex-col gap-2 mr-3 shrink-0 mt-1">
@@ -123,6 +130,73 @@ const MessageBubble = memo(
       return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }, [msg.metadata?.createdAt]);
 
+    const inlineCodeClass = isModel
+      ? 'bg-[var(--surface-2)] text-[var(--accent)]'
+      : 'bg-white/20 text-[var(--text-invert)]';
+    const proseTextClass = isModel ? 'text-[var(--text)]' : 'text-[var(--text-invert)] prose-invert';
+
+    // Memoize markdown components to prevent re-renders
+    const markdownComponents = useMemo(() => ({
+      a: ({ children, href }: any) => (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={
+            isModel
+              ? 'text-[var(--accent)] underline decoration-[var(--accent)]/60 hover:decoration-[var(--accent)] transition-all duration-200 font-medium'
+              : 'text-[var(--text-invert)] underline decoration-white/60 hover:decoration-white transition-all duration-200 font-medium'
+          }
+        >
+          {children}
+        </a>
+      ),
+      blockquote: ({ children }: any) => (
+        <blockquote className={`border-l-4 pl-4 py-1 my-3 ${isModel ? 'border-[var(--accent)]/40 text-[var(--text-muted)]' : 'border-white/40 text-white/80'} italic`}>
+          {children}
+        </blockquote>
+      ),
+      code: ({ inline, className, children, ...props }: any) => {
+        if (inline) {
+          return (
+            <code 
+              className={`px-2 py-1 rounded-lg text-[12px] font-semibold ${inlineCodeClass}`} 
+              {...props}
+            >
+              {children}
+            </code>
+          );
+        }
+        const lang = /language-(\w+)/.exec(className || '');
+        return (
+          <pre className="bg-[var(--surface-2)] border border-[color:var(--border)] rounded-xl p-4 overflow-x-auto text-[13px] my-3 shadow-sm max-w-full">
+            <code className={lang ? `language-${lang[1]}` : ''}>
+              {children}
+            </code>
+          </pre>
+        );
+      },
+      ul: ({ children }: any) => (
+        <ul className="list-disc pl-5 my-2 space-y-1">
+          {children}
+        </ul>
+      ),
+      ol: ({ children }: any) => (
+        <ol className="list-decimal pl-5 my-2 space-y-1">
+          {children}
+        </ol>
+      ),
+      li: ({ children }: any) => (
+        <li className="my-1">
+          {children}
+        </li>
+      ),
+      h1: ({ children }: any) => <h1 className="text-xl font-bold my-3">{children}</h1>,
+      h2: ({ children }: any) => <h2 className="text-lg font-bold my-3">{children}</h2>,
+      h3: ({ children }: any) => <h3 className="text-base font-bold my-2">{children}</h3>,
+      p: ({ children }: any) => <p className="my-2">{children}</p>
+    }), [isModel, inlineCodeClass]);
+
     const handleCopy = () => {
       if (content) {
         navigator.clipboard.writeText(content);
@@ -136,11 +210,6 @@ const MessageBubble = memo(
     const bubbleClasses = isModel
       ? 'bg-[var(--surface)] text-[var(--text)] border border-[color:var(--border)]/70 shadow-[0_8px_24px_rgba(15,23,42,0.08)]'
       : 'bg-[var(--accent)] text-[var(--text-invert)] border border-[color:var(--accent)]/40 shadow-[0_8px_24px_rgba(var(--accent-rgb),0.25)]';
-
-    const inlineCodeClass = isModel
-      ? 'bg-[var(--surface-2)] text-[var(--accent)]'
-      : 'bg-white/20 text-[var(--text-invert)]';
-    const proseTextClass = isModel ? 'text-[var(--text)]' : 'text-[var(--text-invert)] prose-invert';
 
     return (
       <div className={`flex w-full mb-6 ${isModel ? 'justify-start' : 'justify-end'} px-3 md:px-6 animate-fade-in`}>
@@ -172,40 +241,8 @@ const MessageBubble = memo(
               )}
 
               {content && (
-                <div className={`prose prose-sm max-w-none break-words ${proseTextClass} prose-p:leading-relaxed prose-li:leading-relaxed`}>
-                  <Markdown
-                    components={{
-                      a: ({ children, href }) => (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={
-                            isModel
-                              ? 'text-[var(--accent)] underline decoration-[var(--accent)] hover:decoration-2 transition-all duration-200'
-                              : 'text-[var(--text-invert)] underline decoration-white/60 hover:decoration-white transition-all duration-200'
-                          }
-                        >
-                          {children}
-                        </a>
-                      ),
-                      code({ inline, className, children, ...props }) {
-                        if (inline) {
-                          return (
-                            <code className={`px-2 py-1 rounded-lg text-[12px] font-semibold ${inlineCodeClass}`} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                        const lang = /language-(\w+)/.exec(className || '');
-                        return (
-                          <pre className="bg-[var(--surface-2)] border border-[color:var(--border)] rounded-xl p-4 overflow-x-auto text-[13px] my-3 shadow-sm max-w-full">
-                            <code className={lang ? `language-${lang[1]}` : ''}>{children}</code>
-                          </pre>
-                        );
-                      }
-                    }}
-                  >
+                <div className={`prose prose-sm max-w-none break-words ${proseTextClass} prose-p:leading-relaxed prose-li:leading-relaxed prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2`}>
+                  <Markdown components={markdownComponents}>
                     {content}
                   </Markdown>
                   {isStreaming && isModel && <span className="inline-block w-2.5 h-5 bg-[var(--accent)] align-middle ml-1.5 animate-pulse rounded-sm"></span>}
@@ -292,6 +329,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = memo(
   ({ messages, personaMode, isLoading, messagesEndRef, onRetry, onAtBottomChange }) => {
     const virtuosoRef = useRef<VirtuosoHandle>(null);
     const [isAtBottom, setIsAtBottom] = useState(true);
+    const isAutoScrolling = useRef(true);
+    const lastMessageCountRef = useRef(messages.length);
+
+    // Auto-scroll logic: smooth scroll when near bottom and new message arrives
+    useEffect(() => {
+      if (isAtBottom && messages.length > lastMessageCountRef.current) {
+        requestAnimationFrame(() => {
+          virtuosoRef.current?.scrollToIndex({
+            index: messages.length - 1,
+            behavior: 'smooth',
+            align: 'end'
+          });
+        });
+      }
+      lastMessageCountRef.current = messages.length;
+    }, [messages.length, isAtBottom]);
 
     const allItems = useMemo(() => {
       if (isLoading) {
@@ -319,6 +372,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = memo(
     const handleAtBottomChange = useCallback(
       (atBottom: boolean) => {
         setIsAtBottom(atBottom);
+        isAutoScrolling.current = atBottom;
         onAtBottomChange?.(atBottom);
       },
       [onAtBottomChange]
@@ -334,7 +388,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = memo(
           followOutput={isAtBottom ? 'smooth' : false}
           atBottomStateChange={handleAtBottomChange}
           alignToBottom
-          atBottomThreshold={80}
+          atBottomThreshold={120}
           components={{
             Footer: Footer
           }}

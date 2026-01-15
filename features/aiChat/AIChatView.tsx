@@ -98,6 +98,13 @@ const AIChatView: React.FC<AIChatViewProps> = ({ chatLogic }) => {
             const viewport = window.visualViewport;
             const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
             root.style.setProperty('--keyboard-offset', `${offset}px`);
+            
+            // Prevent body scroll when keyboard is open
+            if (offset > 0) {
+                document.body.style.overflow = 'hidden';
+            } else {
+                document.body.style.overflow = '';
+            }
         };
 
         updateViewport();
@@ -108,13 +115,14 @@ const AIChatView: React.FC<AIChatViewProps> = ({ chatLogic }) => {
             window.visualViewport?.removeEventListener('resize', updateViewport);
             window.visualViewport?.removeEventListener('scroll', updateViewport);
             root.style.setProperty('--keyboard-offset', '0px');
+            document.body.style.overflow = '';
         };
     }, []);
 
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
         if (messagesEndRef.current) {
             requestAnimationFrame(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+                messagesEndRef.current?.scrollIntoView({ behavior, block: 'nearest' });
             });
             isAutoScrolling.current = true;
             setShowScrollBtn(false);
@@ -146,10 +154,10 @@ const AIChatView: React.FC<AIChatViewProps> = ({ chatLogic }) => {
     const isHydraActive = activeModel?.id === 'auto-best';
 
     return (
-        <div className="h-full w-full relative bg-noise flex flex-col overflow-hidden bg-[var(--bg)] px-4 sm:px-5 md:px-6" style={{ overscrollBehavior: 'contain' }}>
+        <div className="h-full w-full relative bg-noise flex flex-col overflow-hidden bg-[var(--bg)]" style={{ overscrollBehavior: 'contain', position: 'relative' }}>
             <VaultPinModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onSuccess={() => setIsVaultSynced(true)} />
             
-            <header className="shrink-0 z-50 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+            <header className="shrink-0 z-50 pt-[calc(max(0.5rem,env(safe-area-inset-top)))] px-4 sm:px-5 md:px-6">
                 <div className="mx-auto w-full max-w-[860px]">
                     <Card tone="translucent" padding="sm" className="border-border/60 shadow-[0_24px_90px_-60px_rgba(var(--accent-rgb),0.9)]">
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -205,7 +213,7 @@ const AIChatView: React.FC<AIChatViewProps> = ({ chatLogic }) => {
                     </Card>
                 </div>
             </header>
-            <div className="flex-1 min-h-0 relative w-full max-w-[860px] mx-auto pt-4">
+            <div className="flex-1 min-h-0 relative w-full max-w-[860px] mx-auto px-4 sm:px-5 md:px-6 pt-4">
                 {showEmptyState ? (
                     <div className="flex flex-col h-full justify-center items-center w-full pb-20 animate-fade-in overflow-y-auto custom-scroll px-4 sm:px-6">
                             <div className="text-center mb-12 space-y-5">
@@ -240,8 +248,8 @@ const AIChatView: React.FC<AIChatViewProps> = ({ chatLogic }) => {
             </div>
             {!showEmptyState && (
                 <div
-                    className={`shrink-0 z-50 w-full flex justify-center px-4 sm:px-5 md:px-6 transition-all duration-300 ${isMobileNavVisible ? 'mb-16' : ''}`}
-                    style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + var(--keyboard-offset, 0px) + 1rem)' }}
+                    className={`shrink-0 z-50 w-full flex justify-center px-4 sm:px-5 md:px-6 transition-all duration-300 bg-[var(--bg)] ${isMobileNavVisible ? 'mb-16' : ''}`}
+                    style={{ paddingBottom: 'calc(max(0.5rem, env(safe-area-inset-bottom)) + var(--keyboard-offset, 0px) + 1rem)' }}
                 >
                     <div className="w-full max-w-[860px] pointer-events-auto relative">
                         {showScrollBtn && (

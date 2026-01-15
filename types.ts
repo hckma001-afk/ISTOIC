@@ -58,6 +58,13 @@ export interface MessageMetadata {
     systemStatus?: string; // E.g., "Rerouting to Llama 3..."
     createdAt?: string; // ISO Date String
     hasAttachment?: boolean;
+    retryContext?: {
+        prompt: string;
+        attachment?: { data: string; mimeType: string };
+        persona?: 'hanisah' | 'stoic';
+        modelId?: string;
+        threadId?: string;
+    };
 }
 
 export interface ChatMessage {

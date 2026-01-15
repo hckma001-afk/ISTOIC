@@ -66,6 +66,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const recognitionRef = useRef<any>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const [isDictating, setIsDictating] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
@@ -77,6 +78,31 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
 
     const currentLang = getLang();
     const t = TRANSLATIONS[currentLang].chat;
+
+    // Handle iOS keyboard and safe-area padding
+    useEffect(() => {
+      const handleVisualViewportChange = () => {
+        if (!window.visualViewport || !containerRef.current) return;
+        
+        const viewport = window.visualViewport;
+        const keyboardHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+        
+        // Adjust container scroll into view when keyboard appears
+        if (keyboardHeight > 0 && inputRef.current) {
+          requestAnimationFrame(() => {
+            inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          });
+        }
+      };
+
+      window.visualViewport?.addEventListener('resize', handleVisualViewportChange);
+      window.visualViewport?.addEventListener('scroll', handleVisualViewportChange);
+
+      return () => {
+        window.visualViewport?.removeEventListener('resize', handleVisualViewportChange);
+        window.visualViewport?.removeEventListener('scroll', handleVisualViewportChange);
+      };
+    }, []);
 
     const suggestionChips = useMemo(() => {
       if (personaMode === 'hanisah') {
@@ -102,7 +128,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
           textarea.style.height = 'auto';
           const maxHeight = Math.min(240, window.innerHeight * 0.4);
           const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-          textarea.style.height = `${Math.max(24, newHeight)}px`;
+          textarea.style.height = `${Math.max(44, newHeight)}px`;
         });
       }
     }, [input, attachment]);
@@ -260,14 +286,14 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
       onSubmit(undefined, attachmentPayload ? { attachment: attachmentPayload } : undefined);
       setAttachment(null);
       if (inputRef.current) inputRef.current.style.height = 'auto';
-      inputRef.current?.focus();
+      setTimeout(() => inputRef.current?.focus(), 0);
     };
 
     const charTone =
       input.length > MAX_CHARS * 0.9 ? 'var(--danger)' : input.length > MAX_CHARS * 0.7 ? 'var(--warning)' : 'var(--text-muted)';
 
     return (
-      <div className="w-full relative group" style={{ willChange: 'transform' }}>
+      <div className="w-full relative group" style={{ willChange: 'transform' }} ref={containerRef}>
         {showEmojiPicker && <div className="fixed inset-0 z-20" onClick={() => setShowEmojiPicker(false)}></div>}
 
         {showEmojiPicker && (
@@ -315,6 +341,10 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
                 ? 'ring-2 ring-[color:var(--accent)]/40 border-[color:var(--accent)]/40'
                 : ''
           }`}
+          style={{
+            minHeight: '44px',
+            position: 'relative'
+          }}
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragOver(true);
@@ -399,7 +429,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
               <button
                 onClick={onNewChat}
                 aria-label="New chat"
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--surface-2)]/60 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--accent)] border border-transparent hover:border-[color:var(--accent)]/30 transition-all duration-200 active:scale-90"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-[var(--surface-2)]/60 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--accent)] border border-transparent hover:border-[color:var(--accent)]/30 transition-all duration-200 active:scale-90"
                 title={t.newChat}
               >
                 <Plus size={20} strokeWidth={2.2} />
@@ -409,7 +439,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
                 onClick={handleAttachClick}
                 disabled={disableVisuals}
                 aria-label="Attach image"
-                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
                   disableVisuals
                     ? 'opacity-40 cursor-not-allowed text-[var(--text-muted)]'
                     : attachment
@@ -424,7 +454,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
 
               <button
                 onClick={() => setShowEmojiPicker((prev) => !prev)}
-                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
                   showEmojiPicker
                     ? 'text-[var(--accent)] bg-[var(--accent)]/15 border-[color:var(--accent)]/40'
                     : 'bg-[var(--surface-2)]/60 hover:bg-[var(--surface-2)] border-transparent text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[color:var(--accent)]/30'
@@ -437,7 +467,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
               <button
                 onClick={() => !disableVisuals && onPollinations?.()}
                 disabled={disableVisuals}
-                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
                   disableVisuals
                     ? 'opacity-40 cursor-not-allowed text-[var(--text-muted)]'
                     : 'bg-[var(--surface-2)]/60 hover:bg-[var(--surface-2)] border-transparent text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[color:var(--accent)]/30'
@@ -451,7 +481,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
                 onClick={onToggleVaultSync}
                 disabled={!isVaultEnabled}
                 aria-label={isVaultEnabled ? (isVaultSynced ? 'Vault sync active' : 'Vault sync inactive') : 'Vault disabled'}
-                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
                   !isVaultEnabled
                     ? 'opacity-40'
                     : isVaultSynced
@@ -472,7 +502,7 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
               <button
                 onClick={toggleDictation}
                 aria-label={isDictating ? 'Stop dictation' : 'Start dictation'}
-                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 border ${
                   isDictating
                     ? 'bg-[var(--accent)] text-[var(--on-accent-color)] border-transparent shadow-lg'
                     : 'bg-[var(--surface-2)]/60 hover:bg-[var(--surface-2)] border-transparent text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[color:var(--accent)]/30'
@@ -486,17 +516,17 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
                 <button
                   onClick={handleStop}
                   aria-label="Stop generation"
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 bg-gradient-to-r from-[var(--danger)] to-[var(--danger)]/80 text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 border border-[color:var(--danger)]/40"
+                  className="min-w-[56px] min-h-[56px] rounded-2xl flex items-center justify-center transition-all duration-300 bg-gradient-to-r from-[var(--danger)] to-[var(--danger)]/80 text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 border border-[color:var(--danger)]/40"
                   title="Stop generation"
                 >
-                  <Square size={22} strokeWidth={2.5} />
+                  <Square size={24} strokeWidth={2.5} />
                 </button>
               ) : (
                 <button
                   onClick={handleSubmit}
                   disabled={(!input.trim() && !attachment) || input.length > MAX_CHARS}
                   aria-label="Send message"
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 border font-semibold ${
+                  className={`min-w-[56px] min-h-[56px] rounded-2xl flex items-center justify-center transition-all duration-300 border font-semibold ${
                     input.trim() || attachment
                       ? 'bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] text-white border-transparent shadow-lg hover:shadow-xl hover:scale-105 active:scale-95'
                       : 'bg-[var(--surface-2)]/40 text-[var(--text-muted)] cursor-not-allowed border-transparent'
@@ -516,6 +546,16 @@ export const ChatInput: React.FC<ChatInputProps> = memo(
           }
         `}</style>
       </div>
+    );
+  },
+  (prev, next) => {
+    // Memoization: Return true if props are equal (skip re-render)
+    return (
+      prev.input === next.input &&
+      prev.isLoading === next.isLoading &&
+      prev.personaMode === next.personaMode &&
+      prev.isVaultSynced === next.isVaultSynced &&
+      prev.variant === next.variant
     );
   }
 );
