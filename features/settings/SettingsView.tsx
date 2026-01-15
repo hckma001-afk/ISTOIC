@@ -46,15 +46,15 @@ const THEME_COLORS: Record<string, string> = {
 // --- OPTIMIZED SUB-COMPONENTS (Memoized) ---
 
 const SettingsSection: React.FC<{ title: string, icon: React.ReactNode, children: React.ReactNode, className?: string }> = memo(({ title, icon, children, className }) => (
-    <Card padding="lg" className={`space-y-4 border-border/60 shadow-[var(--shadow-soft)] ${className || ''}`}>
-        <div className="flex items-center gap-2 text-text-muted">
+    <div className={`space-y-4 ${className || ''}`}>
+        <div className="flex items-center gap-2 opacity-80">
             {React.cloneElement(icon as React.ReactElement<any>, { size: 16 })}
-            <h3 className="overline text-text-muted">{title}</h3>
+            <h3 className="bento-card-title text-lg">{title}</h3>
         </div>
         <div className="space-y-3">
             {children}
         </div>
-    </Card>
+    </div>
 ));
 
 const ToolRow: React.FC<{ label: string, desc: string, icon: React.ReactNode, isActive: boolean, onToggle: () => void }> = memo(({ label, desc, icon, isActive, onToggle }) => (
@@ -301,42 +301,48 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                 onReset={() => handleResetPrompt(editPersona)}
             />
 
-            <Card tone="translucent" padding="lg" className="mb-6 border-border/60 shadow-[0_30px_120px_-70px_rgba(var(--accent-rgb),0.9)]">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="w-full space-y-3">
-                        <p className="caption text-text-muted uppercase tracking-[0.2em]">Control Center</p>
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-[color:var(--accent)]/12 text-[color:var(--accent)] flex items-center justify-center">
-                                <User size={20} />
+            <Card tone="bento-blue" padding="bento" bento className="bento-card mb-6 shadow-[0_30px_120px_-70px_rgba(var(--accent-rgb),0.9)]">
+                <div className="bento-card-content">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="w-full space-y-3">
+                            <p className="caption opacity-80 uppercase tracking-[0.2em]">Control Center</p>
+                            <div className="flex items-center gap-3">
+                                <div className="bento-card-icon">
+                                    <User size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="bento-card-title text-3xl">{t.title}</h1>
+                                    <p className="bento-card-description">Manage appearance, identity, and security preferences.</p>
+                                </div>
                             </div>
-                            <div>
-                                <h1 className="text-3xl font-black tracking-tight text-text">{t.title}</h1>
-                                <p className="body-sm text-text-muted">Manage appearance, identity, and security preferences.</p>
+                            <div className="flex flex-wrap gap-2">
+                                <Badge variant="neutral">{appLanguage.toUpperCase()}</Badge>
+                                <Badge variant="neutral">{colorScheme}</Badge>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            <Badge variant="neutral">{appLanguage.toUpperCase()}</Badge>
-                            <Badge variant="neutral">{colorScheme}</Badge>
+                        <div className="flex items-center gap-2">
+                            <Button 
+                                onClick={handleSavePersona}
+                                disabled={isSaving}
+                                variant="primary"
+                                size="md"
+                                className="gap-2 bg-white/20 hover:bg-white/30 text-white border-white/30"
+                            >
+                                {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? t.saved : t.save}
+                            </Button>
                         </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button 
-                            onClick={handleSavePersona}
-                            disabled={isSaving}
-                            variant="primary"
-                            size="md"
-                            className="gap-2"
-                        >
-                            {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? t.saved : t.save}
-                        </Button>
                     </div>
                 </div>
             </Card>
 
             <div className="flex-1 overflow-y-auto custom-scroll pr-2 space-y-2 pb-[calc(env(safe-area-inset-bottom)+4rem)]">
+                <section className="bento-grid grid grid-cols-12 gap-[var(--bento-gap)]">
                 
                 {/* 1. VISUAL & LANGUAGE */}
-                <SettingsSection title={t.theme_label || "Appearance & language"} icon={<Palette size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-purple" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title={t.theme_label || "Appearance & language"} icon={<Palette size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 grid grid-cols-1 md:grid-cols-2 gap-6 shadow-[var(--shadow-soft)]">
                         
                         {/* Theme Toggle */}
@@ -396,9 +402,15 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
 
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
                 {/* 2. IDENTITY MATRIX */}
-                <SettingsSection title={t.identity_title || "Profile"} icon={<UserCheck size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-teal" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title={t.identity_title || "Profile"} icon={<UserCheck size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 space-y-6 shadow-[var(--shadow-soft)]">
                         
                         {/* ID EDITOR */}
@@ -479,9 +491,15 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                         </div>
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
                 {/* 3. ASSISTANT PERSONALITY */}
-                <SettingsSection title="Assistant profile" icon={<Brain size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-orange" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title="Assistant profile" icon={<Brain size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 shadow-[var(--shadow-soft)]">
                         <div className="flex bg-surface-2 p-1 rounded-xl border border-border/70 mb-6">
                              <button onClick={() => setActiveConfigTab('HANISAH')} className={`flex-1 py-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-95 ${activeConfigTab === 'HANISAH' ? 'bg-surface text-orange-500 shadow-sm' : 'text-text-muted hover:text-text'}`}>
@@ -538,9 +556,15 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                         )}
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
                 {/* 4. NEURAL UPLINKS */}
-                <SettingsSection title="AI providers" icon={<Server size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-green" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title="AI providers" icon={<Server size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 shadow-[var(--shadow-soft)] grid grid-cols-1 md:grid-cols-2 gap-3">
                         {['GEMINI', 'GROQ', 'OPENAI', 'DEEPSEEK', 'MISTRAL', 'HUGGINGFACE', 'ELEVENLABS'].map(p => (
                             <ProviderToggleRow 
@@ -553,9 +577,15 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                         ))}
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
                 {/* 5. SECURITY PROTOCOLS */}
-                <SettingsSection title="Security" icon={<Lock size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-red" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title="Security" icon={<Lock size={18} />}>
                     <div className="p-6 bg-surface rounded-[24px] border border-border/70 shadow-[var(--shadow-soft)] space-y-4">
                         <div className="flex items-center justify-between p-4 bg-surface-2 rounded-xl border border-border/70">
                             <div className="flex items-center gap-3">
@@ -587,9 +617,15 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                         )}
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
                 {/* 6. DATA GOVERNANCE */}
-                <SettingsSection title={t.data_title || "Data"} icon={<Database size={18} />}>
+                <div className="col-span-12">
+                <Card tone="bento-blue" padding="bento" bento className="bento-card">
+                    <div className="bento-card-content">
+                        <SettingsSection title={t.data_title || "Data"} icon={<Database size={18} />}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <button onClick={handleBackup} className="p-4 bg-surface border border-border/70 hover:border-blue-500/50 rounded-2xl flex items-center gap-3 group transition-all active:scale-95 shadow-[var(--shadow-soft)]">
                             <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg group-hover:bg-blue-500 group-hover:text-white transition-colors"><Download size={18}/></div>
@@ -617,7 +653,11 @@ const SettingsView: React.FC<SettingsViewProps> = memo(({ onNavigate }) => {
                         </button>
                     </div>
                 </SettingsSection>
+                    </div>
+                </Card>
+                </div>
 
+                </section>
             </div>
         </div>
     );

@@ -161,23 +161,25 @@ const ActionButton: React.FC<ActionButtonProps> = ({
 
 const ProviderCard: React.FC<{ provider: ProviderStatus }> = ({ provider }) => {
   const status = provider.status as 'HEALTHY' | 'COOLDOWN' | 'UNHEALTHY';
-  const colors = getStatusColor(status);
+  const tone = status === 'HEALTHY' ? 'bento-green' : status === 'COOLDOWN' ? 'bento-orange' : 'bento-red';
 
   return (
-    <Card padding="sm" className="border-border/70 shadow-[var(--shadow-soft)]">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-md ${colors.bg} border ${colors.border}`}>
-            <Server size={14} className={colors.text} />
+    <Card tone={tone as any} padding="sm" bento className="bento-card">
+      <div className="bento-card-content">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bento-card-icon">
+              <Server size={20} />
+            </div>
+            <div>
+              <p className="bento-card-title text-sm">{provider.id}</p>
+              <p className="bento-card-description text-xs">
+                {status === 'HEALTHY' ? 'Operational' : status === 'COOLDOWN' ? 'Cooling down' : 'Issues detected'}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="body-sm font-semibold text-text">{provider.id}</p>
-            <p className="caption text-text-muted">
-              {status === 'HEALTHY' ? 'Operational' : status === 'COOLDOWN' ? 'Cooling down' : 'Issues detected'}
-            </p>
-          </div>
+          <div className="w-3 h-3 rounded-full bg-white" />
         </div>
-        <div className={`w-3 h-3 rounded-full ${colors.dot}`} />
       </div>
     </Card>
   );
@@ -360,27 +362,29 @@ export const SystemHealthView: React.FC = () => {
       <div className="max-w-[1400px] mx-auto w-full h-full flex flex-col gap-6">
         {/* ═════════════════════════════════════════ HEADER ═════════════════════════════════════════ */}
         <header className="flex flex-col gap-4">
-          <Card tone="translucent" className="p-6 border-border/60 shadow-[0_30px_100px_-60px_rgba(var(--accent-rgb),0.8)]">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-              <div className="space-y-2">
-                <p className={LABEL_CLASS}>System Status</p>
-                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-text">
-                  Health & Diagnostics
-                </h1>
-                <p className="body-sm text-text-muted">
-                  Real-time monitoring of providers, latency, and system integrity. 
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${healthColors.bg} border ${healthColors.border}`}>
-                  <div className={`w-2 h-2 rounded-full ${healthColors.dot}`} />
-                  <span className={`text-sm font-semibold ${healthColors.text}`}>
-                    {healthStatus === 'HEALTHY'
-                      ? 'All Systems Operational'
-                      :  healthStatus === 'COOLDOWN'
-                      ? 'Some Issues Detected'
-                      : 'Critical Issues'}
-                  </span>
+          <Card tone={healthStatus === 'HEALTHY' ? "bento-green" : healthStatus === 'COOLDOWN' ? "bento-orange" : "bento-red"} padding="bento" bento className="bento-card shadow-[0_30px_100px_-60px_rgba(var(--accent-rgb),0.8)]">
+            <div className="bento-card-content">
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                <div className="space-y-2">
+                  <p className="caption opacity-80">System Status</p>
+                  <h1 className="bento-card-title text-2xl md:text-3xl">
+                    Health & Diagnostics
+                  </h1>
+                  <p className="bento-card-description">
+                    Real-time monitoring of providers, latency, and system integrity. 
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 border border-white/30">
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                    <span className="text-sm font-semibold text-white">
+                      {healthStatus === 'HEALTHY'
+                        ? 'All Systems Operational'
+                        :  healthStatus === 'COOLDOWN'
+                        ? 'Some Issues Detected'
+                        : 'Critical Issues'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -433,76 +437,86 @@ export const SystemHealthView: React.FC = () => {
         <div className="flex-1 min-h-0 overflow-hidden">
           {/* ─── OVERVIEW TAB ─── */}
           {activeTab === 'OVERVIEW' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full overflow-y-auto pb-6 custom-scroll">
+            <div className="bento-grid grid grid-cols-1 lg:grid-cols-12 gap-[var(--bento-gap)] h-full overflow-y-auto pb-6 custom-scroll">
               <div className="lg:col-span-8 space-y-6">
                 {/* Metrics Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bento-grid grid grid-cols-1 md:grid-cols-3 gap-[var(--bento-gap)]">
                   {/* Latency Card */}
-                  <Card padding="sm" className="h-full border-border/70">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-md bg-accent/10">
-                          <Network size={14} className="text-accent" />
+                  <Card tone="bento-blue" padding="bento" bento className="bento-card h-full">
+                    <div className="bento-card-content">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="bento-card-icon">
+                            <Network size={24} />
+                          </div>
+                          <span className="caption opacity-80">Latency</span>
                         </div>
-                        <span className={LABEL_CLASS}>Latency</span>
+                        <div className="w-2 h-2 rounded-full bg-white" />
                       </div>
-                      <div className={`w-2 h-2 rounded-full ${healthColors.dot}`} />
+                      <p className="bento-card-title mt-2">{health.avgLatency || '—'} ms</p>
+                      <LiveSparkline data={latencyHistory} color="rgba(255,255,255,0.8)" />
                     </div>
-                    <p className="page-title text-text mt-2">{health.avgLatency || '—'} ms</p>
-                    <LiveSparkline data={latencyHistory} />
                   </Card>
 
                   {/* Memory Card */}
-                  <Card padding="sm" className="h-full border-border/70">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-md bg-warning/10">
-                          <HardDrive size={14} className="text-warning" />
+                  <Card tone="bento-orange" padding="bento" bento className="bento-card h-full">
+                    <div className="bento-card-content">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="bento-card-icon">
+                            <HardDrive size={24} />
+                          </div>
+                          <span className="caption opacity-80">Memory</span>
                         </div>
-                        <span className={LABEL_CLASS}>Memory</span>
                       </div>
+                      <p className="bento-card-title mt-2">{health.memoryMb ?  `${health.memoryMb}MB` : '—'}</p>
+                      <LiveSparkline data={memoryHistory} color="rgba(255,255,255,0.8)" />
                     </div>
-                    <p className="page-title text-text mt-2">{health.memoryMb ?  `${health.memoryMb}MB` : '—'}</p>
-                    <LiveSparkline data={memoryHistory} color="var(--warning)" />
                   </Card>
 
                   {/* Ping Card */}
-                  <Card padding="sm" className="h-full border-border/70">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-md bg-success/10">
-                          <Wifi size={14} className="text-success" />
+                  <Card tone="bento-green" padding="bento" bento className="bento-card h-full">
+                    <div className="bento-card-content">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="bento-card-icon">
+                            <Wifi size={24} />
+                          </div>
+                          <span className="caption opacity-80">Ping</span>
                         </div>
-                        <span className={LABEL_CLASS}>Ping</span>
+                        <button
+                          onClick={handlePing}
+                          className="p-1 hover:bg-white/20 rounded transition-colors"
+                          title="Test network ping"
+                        >
+                          <RefreshCw size={13} className="text-white/80" />
+                        </button>
                       </div>
-                      <button
-                        onClick={handlePing}
-                        className="p-1 hover:bg-surface-2 rounded transition-colors"
-                        title="Test network ping"
-                      >
-                        <RefreshCw size={13} className="text-text-muted" />
-                      </button>
+                      <p className="bento-card-title mt-2">
+                        {realPing !== null ? (realPing === -1 ? 'Error' : `${realPing}ms`) : '—'}
+                      </p>
                     </div>
-                    <p className="page-title text-text mt-2">
-                      {realPing !== null ? (realPing === -1 ? 'Error' : `${realPing}ms`) : '—'}
-                    </p>
                   </Card>
                 </div>
 
                 {/* Providers Section */}
-                <Card padding="md" className="border-border/70">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Server size={16} className="text-text-muted" />
-                    <h3 className="body-sm font-semibold text-text">API Providers</h3>
-                  </div>
-                  <div className="grid grid-cols-1 md: grid-cols-2 gap-3">
-                    {providers.length > 0 ? (
-                      providers.map((p) => <ProviderCard key={p. id} provider={p} />)
-                    ) : (
-                      <p className="caption text-text-muted col-span-full">
-                        No providers loaded. 
-                      </p>
-                    )}
+                <Card tone="bento-teal" padding="bento" bento className="bento-card">
+                  <div className="bento-card-content">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="bento-card-icon">
+                        <Server size={24} />
+                      </div>
+                      <h3 className="bento-card-title">API Providers</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {providers.length > 0 ? (
+                        providers.map((p) => <ProviderCard key={p. id} provider={p} />)
+                      ) : (
+                        <p className="bento-card-description col-span-full">
+                          No providers loaded. 
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </Card>
 
@@ -529,40 +543,44 @@ export const SystemHealthView: React.FC = () => {
 
               {/* Right Sidebar:  Diagnostics */}
               <div className="lg:col-span-4 space-y-4">
-                <Card padding="md" className="flex flex-col h-full border-border/70">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Stethoscope size={16} className="text-text-muted" />
-                    <h3 className="body-sm font-semibold text-text">AI Diagnostics</h3>
+                <Card tone="bento-purple" padding="bento" bento className="bento-card flex flex-col h-full">
+                  <div className="bento-card-content flex flex-col h-full">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="bento-card-icon">
+                        <Stethoscope size={24} />
+                      </div>
+                      <h3 className="bento-card-title">AI Diagnostics</h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scroll mb-4">
+                      {hanisahDiagnosis ?  (
+                        <Markdown className="prose dark:prose-invert prose-sm max-w-none text-sm text-white/90">
+                          {hanisahDiagnosis}
+                        </Markdown>
+                      ) : (
+                        <p className="bento-card-description">
+                          Run diagnostics to see a summary. 
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      onClick={runDiagnostics}
+                      disabled={isScanning}
+                      className="w-full bg-white/20 hover:bg-white/30 text-white border-white/30"
+                      variant={isScanning ? 'subtle' : 'primary'}
+                    >
+                      {isScanning ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" />
+                          Running... 
+                        </>
+                      ) : (
+                        <>
+                          <Stethoscope size={14} />
+                          Run Diagnostics
+                        </>
+                      )}
+                    </Button>
                   </div>
-                  <div className="flex-1 overflow-y-auto custom-scroll mb-4">
-                    {hanisahDiagnosis ?  (
-                      <Markdown className="prose dark:prose-invert prose-sm max-w-none text-sm">
-                        {hanisahDiagnosis}
-                      </Markdown>
-                    ) : (
-                      <p className="caption text-text-muted">
-                        Run diagnostics to see a summary. 
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    onClick={runDiagnostics}
-                    disabled={isScanning}
-                    className="w-full"
-                    variant={isScanning ? 'subtle' : 'primary'}
-                  >
-                    {isScanning ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        Running... 
-                      </>
-                    ) : (
-                      <>
-                        <Stethoscope size={14} />
-                        Run Diagnostics
-                      </>
-                    )}
-                  </Button>
                 </Card>
               </div>
             </div>

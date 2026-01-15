@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Search, Plus, Archive, Trash2 } from 'lucide-react';
+import { Search, Plus, Archive, Trash2, Check } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { type Note } from '../../types';
 import { Input } from '../../components/ui/Input';
@@ -9,6 +9,7 @@ import { Card } from '../../components/ui/Card';
 import { cn } from '../../utils/cn';
 import { debugService } from '../../services/debugService';
 import { UI_REGISTRY, FN_REGISTRY } from '../../constants/registry';
+import { NoteBatchActions } from './NoteBatchActions';
 
 interface NotesListViewProps {
   notes: Note[];
@@ -43,6 +44,8 @@ export const NotesListView: React.FC<NotesListViewProps> = ({ notes, setNotes, o
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'active' | 'archived'>('active');
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   // Filter and sort notes
   const filteredNotes = useMemo(() => {
@@ -82,8 +85,54 @@ export const NotesListView: React.FC<NotesListViewProps> = ({ notes, setNotes, o
   };
 
   const handleNoteClick = (note: Note) => {
-    debugService.logAction(UI_REGISTRY.NOTES_CARD_ITEM, FN_REGISTRY.NOTE_UPDATE, 'OPEN_EDITOR');
-    onNoteSelect(note);
+    if (isSelectionMode) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(note.id)) {
+          next.delete(note.id);
+        } else {
+          next.add(note.id);
+        }
+        return next;
+      });
+    } else {
+      debugService.logAction(UI_REGISTRY.NOTES_CARD_ITEM, FN_REGISTRY.NOTE_UPDATE, 'OPEN_EDITOR');
+      onNoteSelect(note);
+    }
+  };
+
+  const handleToggleSelection = (e: React.MouseEvent, noteId: string) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedIds(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handleBatchArchive = (ids: string[]) => {
+    setNotes(prev => prev.map(n => ids.includes(n.id) ? { ...n, is_archived: true } : n));
+  };
+
+  const handleBatchDelete = (ids: string[]) => {
+    setNotes(prev => prev.filter(n => !ids.includes(n.id)));
+  };
+
+  const handleBatchPin = (ids: string[]) => {
+    setNotes(prev => prev.map(n => ids.includes(n.id) ? { ...n, is_pinned: true } : n));
+  };
+
+  const handleBatchUnpin = (ids: string[]) => {
+    setNotes(prev => prev.map(n => ids.includes(n.id) ? { ...n, is_pinned: false } : n));
   };
 
   const initiateDelete = (e: React.MouseEvent, noteId: string) => {
@@ -134,17 +183,43 @@ export const NotesListView: React.FC<NotesListViewProps> = ({ notes, setNotes, o
             <p className="caption text-text-muted mt-1">
               {filterType === 'archived' ? 'Archived' : 'Active'}
               {filteredNotes.length > 0 && ` • ${filteredNotes.length}`}
+              {isSelectionMode && selectedIds.size > 0 && ` • ${selectedIds.size} selected`}
             </p>
           </div>
-          <Button
-            onClick={() => setFilterType(filterType === 'active' ? 'archived' : 'active')}
-            variant={filterType === 'archived' ? 'primary' : 'secondary'}
-            size="sm"
-            className="h-10 px-3 rounded-full"
-            aria-label={filterType === 'active' ? 'Show archived notes' : 'Show active notes'}
-          >
-            <Archive size={16} />
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSelectionMode ? (
+              <Button
+                onClick={handleDeselectAll}
+                variant="secondary"
+                size="sm"
+                className="h-10 px-3 rounded-full"
+                aria-label="Exit selection mode"
+              >
+                Cancel
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => setIsSelectionMode(true)}
+                  variant="secondary"
+                  size="sm"
+                  className="h-10 px-3 rounded-full"
+                  aria-label="Select notes"
+                >
+                  Select
+                </Button>
+                <Button
+                  onClick={() => setFilterType(filterType === 'active' ? 'archived' : 'active')}
+                  variant={filterType === 'archived' ? 'primary' : 'secondary'}
+                  size="sm"
+                  className="h-10 px-3 rounded-full"
+                  aria-label={filterType === 'active' ? 'Show archived notes' : 'Show active notes'}
+                >
+                  <Archive size={16} />
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Search: Simple and focused */}
@@ -174,11 +249,32 @@ export const NotesListView: React.FC<NotesListViewProps> = ({ notes, setNotes, o
                   onClick={() => handleNoteClick(note)}
                   className={cn(
                     'w-full px-4 md:px-8 py-4 text-left transition-colors hover:bg-surface-2/50 active:bg-surface-2',
-                    'border-none focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-inset'
+                    'border-none focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-inset',
+                    isSelectionMode && selectedIds.has(note.id) && 'bg-accent/10 border-l-2 border-accent'
                   )}
                   aria-label={`Open note: ${note.title || 'Untitled note'}`}
+                  aria-selected={isSelectionMode ? selectedIds.has(note.id) : undefined}
                 >
                   <div className="flex items-start justify-between gap-4">
+                    {/* Selection Checkbox */}
+                    {isSelectionMode && (
+                      <div className="flex-shrink-0 mt-1">
+                        <button
+                          onClick={e => handleToggleSelection(e, note.id)}
+                          className={cn(
+                            'w-5 h-5 rounded border-2 flex items-center justify-center transition-all',
+                            selectedIds.has(note.id)
+                              ? 'bg-accent border-accent'
+                              : 'border-border hover:border-accent/50'
+                          )}
+                          aria-label={selectedIds.has(note.id) ? 'Deselect' : 'Select'}
+                        >
+                          {selectedIds.has(note.id) && (
+                            <Check size={14} className="text-text-invert" strokeWidth={3} />
+                          )}
+                        </button>
+                      </div>
+                    )}
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2 mb-1">
@@ -270,6 +366,19 @@ export const NotesListView: React.FC<NotesListViewProps> = ({ notes, setNotes, o
           <Plus size={24} strokeWidth={2.5} />
         </Button>
       </div>
+
+      {/* Batch Actions Bar */}
+      {isSelectionMode && (
+        <NoteBatchActions
+          selectedIds={selectedIds}
+          notes={notes}
+          onDeselectAll={handleDeselectAll}
+          onBatchArchive={handleBatchArchive}
+          onBatchDelete={handleBatchDelete}
+          onBatchPin={handleBatchPin}
+          onBatchUnpin={handleBatchUnpin}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog
