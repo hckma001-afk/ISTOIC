@@ -87,6 +87,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [isHardLocked, setIsHardLocked] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
+  // Success transition state
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
   // Prevent multiple simultaneous auth attempts
   const [isAuthAttemptInProgress, setIsAuthAttemptInProgress] = useState(false);
 
@@ -95,6 +98,23 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const triggerShake = () => {
     setShake(true);
     setTimeout(() => setShake(false), 500);
+  };
+
+  const handleAuthSuccess = async (identity: IStokUserIdentity) => {
+    setIsTransitioning(true);
+    
+    // Brief delay for visual feedback
+    setTimeout(() => {
+      setIdentity(identity);
+      const nextStage = isSystemPinConfigured() ? "LOCKED" : "SETUP_PIN";
+      setStage(nextStage);
+      setIsTransitioning(false);
+      
+      // Final transition to dashboard after stage change
+      setTimeout(() => {
+        onAuthSuccess();
+      }, 200);
+    }, 200);
   };
 
   const setNiceError = (msg: string) => {
@@ -328,18 +348,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         const userProfile = res.identity;
 
         if (userProfile?.istokId) {
-          setIdentity(userProfile);
-
-          if (isSystemPinConfigured()) {
-            if (bioEnabled && !isHardLocked) {
-              setStage("BIOMETRIC_SCAN");
-              handleBiometricScan();
-            } else {
-              setStage("LOCKED");
-            }
-          } else {
-            setStage("SETUP_PIN");
-          }
+          handleAuthSuccess(userProfile);
           return;
         }
 
@@ -525,7 +534,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           }}
         >
           <div className={`w-full max-w-md ${shake ? "animate-[shake_0.5s_cubic-bezier(.36,.07,.19,.97)_both]" : ""}`}>
-            <div className={authStyles.card}>
+            <div className={`${authStyles.card} ${isTransitioning ? 'animate-scale-out' : ''}`}>
           {stage === "WELCOME" && (
             <div className="text-center space-y-7 animate-slide-up">
               <div className="space-y-3">
@@ -749,20 +758,15 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
             <LoginManual
               onBack={() => setStage("WELCOME")}
               onForgot={() => setStage("FORGOT_ACCOUNT")}
-              onSuccess={(newIdentity) => {
-                setIdentity(newIdentity);
-                setStage(isSystemPinConfigured() ? "LOCKED" : "SETUP_PIN");
-              }}
+              onSuccess={handleAuthSuccess}
             />
           )}
 
           {stage === "REGISTER_MANUAL" && (
             <RegisterManual
               onBack={() => setStage("WELCOME")}
-              onSuccess={(newIdentity) => {
-                setIdentity(newIdentity);
-                setStage("SETUP_PIN");
-              }}
+              onSuccess={handleAuthSuccess}
+              onGoogle={handleGoogleLogin}
             />
           )}
 

@@ -13,6 +13,8 @@ import {
   HelpCircle,
   AlertTriangle,
   User,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { FormField } from '../../components/ui/FormField';
 import { auth, db, ensureAuthPersistence, firebaseConfigError } from '../../services/firebaseConfig';
@@ -61,26 +63,26 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = AUTH_TIMEOUT_MS)
 export const isValidEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
 export const normalizeAuthError = (error: any): string => {
-  const message = error?.message || 'Terjadi kesalahan. Coba lagi.';
+  const message = error?.message || 'An error occurred. Please try again.';
   const code = error?.code || '';
 
   if (code === 'auth/invalid-credential' || message.includes('invalid-credential')) {
-    return 'Email atau password salah.';
+    return 'Invalid email or password.';
   }
   if (code === 'auth/user-not-found' || message.includes('user-not-found')) {
-    return 'Akun tidak ditemukan.';
+    return 'Account not found.';
   }
   if (code === 'auth/wrong-password' || message.includes('wrong-password')) {
-    return 'Password salah.';
+    return 'Incorrect password.';
   }
   if (code === 'auth/email-already-in-use' || message.includes('email-already-in-use')) {
-    return 'Email sudah terdaftar.';
+    return 'Email already registered.';
   }
   if (code === 'auth/weak-password' || message.includes('weak-password')) {
-    return 'Password terlalu lemah. Gunakan minimal 8 karakter.';
+    return 'Password too weak. Use at least 8 characters.';
   }
   if (code === 'auth/network-request-failed') {
-    return 'Koneksi bermasalah. Periksa jaringan Anda.';
+    return 'Network issue. Please check your connection.';
   }
 
   return message;
@@ -125,15 +127,15 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
 
   const handleLogin = async () => {
     if (firebaseConfigError || !auth) {
-      setError(firebaseConfigError || 'Firebase belum dikonfigurasi.');
+      setError('Service temporarily unavailable. Please try again.');
       return;
     }
     if (!isValidEmail(email)) {
-      setError('Format email tidak valid.');
+      setError('Please enter a valid email address.');
       return;
     }
     if (!password) {
-      setError('Password wajib diisi.');
+      setError('Password is required.');
       return;
     }
 
@@ -152,7 +154,7 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
       if (!user.emailVerified) {
         try {
           await withTimeout(sendEmailVerification(user));
-          setInfo('Email belum diverifikasi. Link verifikasi dikirim ulang.');
+          setInfo('Email not verified. Verification link sent.');
         } catch (e) {
           console.warn('Failed to send verification email', e);
         }
@@ -190,8 +192,16 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
         <p className={authStyles.subtitle}>Secure login access</p>
       </div>
 
-      {error && <AuthAlert tone="error" message={error} />}
-      {info && <AuthAlert tone="info" message={info} />}
+      {error && (
+        <p className="text-sm text-text-muted text-center mt-4 px-4">
+          {error}
+        </p>
+      )}
+      {info && (
+        <p className="text-sm text-success text-center mt-4 px-4">
+          {info}
+        </p>
+      )}
 
       <div className="space-y-4">
         <FormField label="Email Address">
@@ -203,6 +213,7 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
               className={authStyles.inputIconWrap}
               placeholder="nama@email.com"
               autoComplete="email"
+              disabled={loading}
             />
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
           </div>
@@ -216,44 +227,57 @@ export const LoginManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSu
               className={authStyles.inputIconWrap}
               placeholder="********"
               autoComplete="current-password"
+              disabled={loading}
             />
             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
           </div>
         </FormField>
         <button onClick={handleLogin} disabled={loading} className={authStyles.buttonPrimary}>
-          {loading ? <Loader2 className="animate-spin" size={16} /> : <ArrowRight size={16} />} MASUK
+          {loading ? (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                Signing in…
+              </div>
+            </>
+          ) : (
+            <>
+              <ArrowRight size={16} /> MASUK
+            </>
+          )}
         </button>
-        <button onClick={onForgot} className={authStyles.linkMuted}>
+        <button onClick={onForgot} className={authStyles.linkMuted} disabled={loading}>
           LUPA AKUN?
         </button>
       </div>
 
-      <button onClick={onBack} className={authStyles.buttonGhost}>
+      <button onClick={onBack} className={authStyles.buttonGhost} disabled={loading}>
         <ArrowLeft size={12} /> KEMBALI
       </button>
     </div>
   );
 };
 
-export const RegisterManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSuccess }> = ({ onBack, onSuccess }) => {
+export const RegisterManual: React.FC<{ onBack: () => void; onSuccess: ManualAuthSuccess; onGoogle: () => void }> = ({ onBack, onSuccess, onGoogle }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  const passwordScore = useMemo(() => {
-    if (!password) return 'empty';
-    if (password.length < 8) return 'weak';
-    if (/[A-Z]/.test(password) && /[0-9]/.test(password)) return 'strong';
-    return 'medium';
-  }, [password]);
-
   const handleRegister = async () => {
     if (firebaseConfigError || !auth) {
       setError(firebaseConfigError || 'Firebase belum dikonfigurasi.');
+      return;
+    }
+    if (!fullName.trim()) {
+      setError('Nama wajib diisi.');
       return;
     }
     if (!isValidEmail(email)) {
@@ -262,10 +286,6 @@ export const RegisterManual: React.FC<{ onBack: () => void; onSuccess: ManualAut
     }
     if (password.length < 8) {
       setError('Password minimal 8 karakter.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Konfirmasi password tidak sama.');
       return;
     }
 
@@ -308,92 +328,100 @@ export const RegisterManual: React.FC<{ onBack: () => void; onSuccess: ManualAut
 
   return (
     <div className="w-full animate-slide-up">
-      <div className="text-center mb-6">
-        <h2 className={authStyles.title}>Daftar Akun</h2>
-        <p className={authStyles.subtitle}>Secure encrypted registration</p>
+      <div className="text-center space-y-3">
+        <p className="text-lg font-bold text-text tracking-[0.4em] uppercase">ISTOIC</p>
+        <h1 className="text-2xl font-semibold text-text tracking-tight">Create your ISTOIC account</h1>
+        <p className="text-sm text-text-muted">Join thousands of users for productivity</p>
       </div>
 
-      {error && <AuthAlert tone="error" message={error} />}
-      {info && <AuthAlert tone="success" message={info} />}
+      {error && (
+        <p className="text-sm text-text-muted text-center mt-4 px-4">
+          {error}
+        </p>
+      )}
+      {info && (
+        <p className="text-sm text-success text-center mt-4 px-4">
+          {info}
+        </p>
+      )}
 
-      <div className="space-y-4">
-        <FormField label="Nama Lengkap">
-          <div className="relative">
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className={authStyles.inputIconWrap}
-              placeholder="Nama Anda"
-              autoComplete="name"
-            />
-            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-          </div>
-        </FormField>
-        <FormField label="Email Address">
-          <div className="relative">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={authStyles.inputIconWrap}
-              placeholder="nama@email.com"
-              autoComplete="email"
-            />
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-          </div>
-        </FormField>
-        <FormField label="Password">
-          <div className="relative">
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={authStyles.inputIconWrap}
-              placeholder="Minimal 8 karakter"
-              autoComplete="new-password"
-            />
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-          </div>
-          <p
-            className={`text-xs font-semibold ${
-              passwordScore === 'strong'
-                ? 'text-success'
-                : passwordScore === 'medium'
-                  ? 'text-warning'
-                  : 'text-text-muted'
-            }`}
+      <div className="space-y-4 mt-7">
+        <input
+          type="text"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          className={authStyles.input}
+          placeholder="Full name"
+          autoComplete="name"
+          disabled={loading}
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={authStyles.input}
+          placeholder="email@address.com"
+          autoComplete="email"
+          disabled={loading}
+        />
+        <div className="relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={authStyles.input}
+            placeholder="Password (minimum 8 characters)"
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+            disabled={loading}
           >
-            {passwordScore === 'empty'
-              ? 'Gunakan kombinasi huruf, angka, dan simbol.'
-              : passwordScore === 'weak'
-                ? 'Password lemah, tambah panjang dan variasi.'
-                : passwordScore === 'medium'
-                  ? 'Password cukup, tambah angka/huruf besar untuk kuat.'
-                  : 'Password kuat.'}
-          </p>
-        </FormField>
-        <FormField label="Konfirmasi Password">
-          <div className="relative">
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className={authStyles.inputIconWrap}
-              placeholder="Ulangi password"
-              autoComplete="new-password"
-            />
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-          </div>
-        </FormField>
-        <button onClick={handleRegister} disabled={loading} className={authStyles.buttonSecondary}>
-          {loading ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />} SELESAI & MASUK
-        </button>
-      </div>
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
 
-      <button onClick={onBack} className={authStyles.buttonGhost}>
-        <ArrowLeft size={12} /> KEMBALI
-      </button>
+        <button onClick={handleRegister} disabled={loading} className={authStyles.buttonPrimary}>
+          {loading ? (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                Creating account…
+              </div>
+            </>
+          ) : (
+            <>
+              <ArrowRight size={16} /> Create account
+            </>
+          )}
+        </button>
+
+        <div className="flex items-center gap-3 px-2 text-xs text-text-muted">
+          <div className="h-px bg-[color:var(--border)] flex-1"></div>
+          <span className="font-semibold uppercase tracking-[0.2em]">or</span>
+          <div className="h-px bg-[color:var(--border)] flex-1"></div>
+        </div>
+
+        <button onClick={onGoogle} disabled={loading} className={authStyles.buttonSecondary}>
+          <Chrome size={16} className="text-[color:var(--primary)]" /> Continue with Google
+        </button>
+
+        <div className="space-y-2 pt-2">
+          <button onClick={onBack} className={authStyles.linkMuted + " mx-auto flex items-center gap-2"} disabled={loading}>
+            Already have an account? Sign in
+          </button>
+          <p className="text-xs text-text-muted text-center">
+            By creating an account, you agree to our <a href="#" className="underline hover:text-text">Terms & Conditions</a>.
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -506,83 +534,99 @@ export const ForgotPin: React.FC<{ onBack: () => void; onSuccess: () => void; ex
 export const ForgotAccount: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
 
   const handleSendReset = async () => {
     if (firebaseConfigError || !auth) {
-      setError(firebaseConfigError || 'Firebase belum dikonfigurasi.');
+      setError('Service temporarily unavailable. Please try again later.');
       return;
     }
     if (!isValidEmail(email)) {
-      setError('Format email tidak valid');
+      setError('Please enter a valid email address.');
       return;
     }
 
     setLoading(true);
     setError('');
-    setStatus('');
 
     try {
       await ensureAuthPersistence('local');
       await withTimeout(sendPasswordResetEmail(auth, email));
-      setStatus('Link reset password dikirim ke email Anda.');
+      setSent(true);
     } catch (e: any) {
-      setError(normalizeAuthError(e));
+      setError('Unable to send reset email. Please check your email address and try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  if (sent) {
+    return (
+      <div className="w-full animate-slide-up">
+        <div className="text-center space-y-4">
+          <p className="text-lg font-bold text-text tracking-[0.4em] uppercase">ISTOIC</p>
+          <h1 className="text-2xl font-semibold text-text tracking-tight">Check your email</h1>
+          <p className="text-sm text-text-muted">We've sent a secure reset link to your email.</p>
+        </div>
+
+        <div className="mt-8">
+          <button onClick={onBack} className={authStyles.buttonPrimary}>
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full animate-slide-up">
-      <div className="text-center mb-8">
-        <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center border border-primary/20 mb-4 text-primary">
-          <HelpCircle size={32} />
-        </div>
-        <h2 className={authStyles.title}>Pemulihan Akun</h2>
-        <p className="text-xs text-text-muted mt-2">Masukkan email terdaftar untuk menerima link reset password.</p>
+      <div className="text-center space-y-4">
+        <p className="text-lg font-bold text-text tracking-[0.4em] uppercase">ISTOIC</p>
+        <h1 className="text-2xl font-semibold text-text tracking-tight">Reset your password</h1>
+        <p className="text-sm text-text-muted">Enter your email and we'll send you a secure reset link.</p>
       </div>
 
-      <div className="space-y-3">
-        <div className="p-4 bg-surface-2 rounded-[var(--radius-lg)] border border-border text-left space-y-3">
-          <h4 className="text-xs font-semibold text-text flex items-center gap-2">
-            <Mail size={12} className="text-primary" /> Email Recovery
-          </h4>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={`${authStyles.input} flex-1`}
-              placeholder="email@anda.com"
-              autoComplete="email"
-            />
-            <button
-              onClick={handleSendReset}
-              disabled={loading}
-              className="px-4 py-3 rounded-[var(--radius-lg)] text-xs font-semibold bg-[color:var(--primary)] text-[color:var(--primary-contrast)] disabled:opacity-60"
-            >
-              {loading ? '...' : 'KIRIM'}
-            </button>
-          </div>
-          {status && <p className="text-xs text-success">{status}</p>}
-          {error && <p className="text-xs text-danger">{error}</p>}
-        </div>
+      {error && (
+        <p className="text-sm text-text-muted text-center mt-4 px-4">
+          {error}
+        </p>
+      )}
 
-        <div className="p-4 bg-warning/10 rounded-[var(--radius-lg)] border border-warning/20 text-left flex gap-3">
-          <AlertTriangle size={20} className="text-warning shrink-0" />
-          <div>
-            <h4 className="text-xs font-semibold text-warning mb-1">Manual Support</h4>
-            <p className="text-xs text-text-muted">
-              Jika kehilangan akses total, silakan hubungi tim IT IStoic melalui channel aman.
-            </p>
-          </div>
+      <div className="space-y-4 mt-8">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={`${authStyles.input} py-4 min-h-[48px]`}
+          placeholder="Email address"
+          autoComplete="email"
+          disabled={loading}
+        />
+
+        <button onClick={handleSendReset} disabled={loading || !email.trim()} className={authStyles.buttonPrimary}>
+          {loading ? (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                Sending link…
+              </div>
+            </>
+          ) : (
+            'Send reset link'
+          )}
+        </button>
+
+        <div className="pt-4">
+          <button onClick={onBack} className={authStyles.linkMuted + " mx-auto flex items-center gap-2"}>
+            Back to Login
+          </button>
         </div>
       </div>
-
-      <button onClick={onBack} className={authStyles.buttonGhost}>
-        KEMBALI KE LOGIN
-      </button>
     </div>
   );
 };
