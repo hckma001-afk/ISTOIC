@@ -36,20 +36,23 @@ type CardProps<T extends CardElement = 'div'> = {
 } & VariantProps<typeof cardVariants> &
   Omit<React.ComponentPropsWithoutRef<T>, 'as' | 'className'>;
 
-export const Card = React.forwardRef(
-  <T extends CardElement = 'div'>(
-    { as, className, tone, interactive, padding, ...props }: CardProps<T>,
-    ref: React.ComponentPropsWithRef<T>['ref']
-  ) => {
-    const Component = (as ?? 'div') as T;
+const CardComponent = React.forwardRef<HTMLElement, CardProps<'div'>>(
+  ({ as = 'div', className, tone, interactive, padding, ...props }, ref) => {
+    const Component = as as any;
     return (
       <Component
         ref={ref}
         className={cn(cardVariants({ tone, interactive, padding }), className)}
-        {...(props as React.ComponentPropsWithoutRef<T>)}
+        {...props}
       />
     );
   }
 );
 
-Card.displayName = 'Card';
+CardComponent.displayName = 'Card';
+
+export const Card = CardComponent as <T extends CardElement = 'div'>(
+  props: CardProps<T> & { ref?: React.Ref<HTMLElement> }
+) => React.ReactElement;
+
+(Card as any).displayName = 'Card';

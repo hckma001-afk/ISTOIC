@@ -290,7 +290,7 @@ const AppContent: React.FC<AppContentProps> = ({ notes, setNotes, isDebugOpen, s
 
 type SessionMode = 'AUTH' | 'SELECT' | 'ISTOIC' | 'ISTOK' | 'TELEPONAN';
 
-const App: React.FC = () => {
+const App: React.FC = (): React.ReactElement => {
     const [isDebugOpen, setIsDebugOpen] = useState(false);
     const [notes, setNotes] = useIDB<Note[]>('notes', []);
     const [sessionMode, setSessionMode] = useState<SessionMode>('AUTH');
@@ -401,7 +401,9 @@ const App: React.FC = () => {
     // ANDROID BACK BUTTON HANDLER (Capacitor)
     useEffect(() => {
         if (!Capacitor.isNativePlatform()) return;
-        const backHandler = CapApp.addListener('backButton', ({ canGoBack }) => {
+        let listenerHandle: any = null;
+        let isMounted = true;
+        CapApp.addListener('backButton', ({ canGoBack }) => {
             if (isDebugOpen) {
                 setIsDebugOpen(false);
                 return;
@@ -421,13 +423,22 @@ const App: React.FC = () => {
                     setSessionMode('SELECT');
                 }
             }
+        }).then(handle => {
+            if (isMounted) {
+                listenerHandle = handle;
+            } else {
+                handle.remove();
+            }
         });
         return () => {
-            backHandler.remove();
+            isMounted = false;
+            if (listenerHandle) {
+                listenerHandle.remove();
+            }
         };
     }, [sessionMode, isDebugOpen, incomingConnection, clearIncoming]);
     
-    const renderSession = () => {
+    const renderSession = (): React.ReactElement => {
         if (sessionMode === 'AUTH') {
             return (
                 <div className={`fixed inset-0 z-[9999] ${isTransitioning ? 'animate-auth-exit' : ''}`}>
@@ -449,17 +460,18 @@ const App: React.FC = () => {
         if (sessionMode === 'ISTOIC') {
             return (
                 <div className={`fixed inset-0 z-[9999] ${isTransitioning ? 'animate-dashboard-enter' : ''}`}>
-                <Suspense
-                    fallback={
-                        <div className="h-screen w-screen bg-bg flex items-center justify-center text-text-muted">
-                            Preparing secure session...
-                        </div>
-                    }
-                >
-                    <ErrorBoundary viewName="ISTOK_SECURE_CHANNEL">
-                        <IStokView onLogout={() => setSessionMode('AUTH')} globalPeer={peer} initialAcceptedConnection={acceptedConnection} />
-                    </ErrorBoundary>
-                </Suspense>
+                    <Suspense
+                        fallback={
+                            <div className="h-screen w-screen bg-bg flex items-center justify-center text-text-muted">
+                                Preparing secure session...
+                            </div>
+                        }
+                    >
+                        <ErrorBoundary viewName="ISTOK_SECURE_CHANNEL">
+                            <IStokView onLogout={() => setSessionMode('AUTH')} globalPeer={peer} initialAcceptedConnection={acceptedConnection} />
+                        </ErrorBoundary>
+                    </Suspense>
+                </div>
             );
         }
         if (sessionMode === 'TELEPONAN') {

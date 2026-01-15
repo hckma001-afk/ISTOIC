@@ -66,7 +66,8 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes, userName =
     const [language] = useLocalStorage<string>('app_language', 'id');
     const [showPinModal, setShowPinModal] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
-    const { isUnlocked: isVaultUnlocked, isEnabled: vaultEnabled, unlock: unlockVault } = useVault();
+    const { isVaultUnlocked, isVaultConfigEnabled, unlockVault } = useVault();
+    const vaultEnabled = isVaultConfigEnabled('stoic'); // Default to stoic persona for dashboard
     const accountMenuRef = useRef<HTMLDivElement>(null);
     const syncLevel = 95;
 
@@ -158,7 +159,7 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes, userName =
 
     return (
         <div className="h-full w-full overflow-y-auto flex flex-col px-4 pt-safe pb-safe md:px-8 lg:px-10 animate-fade-in relative z-10">
-            <VaultPinModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onConfirm={unlockVault} />
+            <VaultPinModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onSuccess={unlockVault} />
             <div className="w-full max-w-7xl mx-auto py-6 md:py-10">
                 {/* Header */}
                 <header className="mb-8">
@@ -222,7 +223,7 @@ const DashboardView: React.FC<DashboardProps> = ({ onNavigate, notes, userName =
                                 {recentNotes.map((note) => (
                                     <button key={note.id || `note-${note.title}`} onClick={() => onNavigate('notes')} className="w-full p-3 rounded-xl bg-surface-2 hover:bg-surface transition-colors text-left group" aria-label={`Open note: ${note.title || t.untitled}`}> 
                                         <p className="section-title text-text group-hover:text-accent transition-colors">{note.title || t.untitled}</p>
-                                        <p className="caption text-text-muted mt-1">{formatDate(note.createdAt)}</p>
+                                        <p className="caption text-text-muted mt-1">{formatDate(note.created)}</p>
                                     </button>
                                 ))}
                                 {recentNotes.length === 0 && (

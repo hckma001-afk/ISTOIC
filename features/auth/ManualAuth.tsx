@@ -15,6 +15,7 @@ import {
   User,
   Eye,
   EyeOff,
+  Chrome,
 } from 'lucide-react';
 import { FormField } from '../../components/ui/FormField';
 import { auth, db, ensureAuthPersistence, firebaseConfigError } from '../../services/firebaseConfig';
