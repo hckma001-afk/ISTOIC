@@ -14,13 +14,6 @@ type RetryContext = {
   threadId?: string;
 };
 
-type MessageMetadata = {
-  createdAt?: string;
-  status?: 'success' | 'loading' | 'error';
-  model?: string;
-  retryContext?: RetryContext;
-};
-
 const TypingIndicator = ({ personaMode }: { personaMode: 'hanisah' | 'stoic' }) => (
   <div className="flex justify-start mb-5 px-3 md:px-6 animate-fade-in w-full">
     <div className="flex flex-col gap-2 mr-3 shrink-0 mt-1">
