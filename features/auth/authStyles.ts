@@ -4,7 +4,7 @@
  */
 export const authStyles = {
   // Card & Container Styles
-  card: "border border-[color:var(--border)] bg-[color:var(--surface)] rounded-[var(--radius-xl)] p-7 sm:p-8 shadow-[var(--shadow-soft)] relative",
+  card: "bg-[color:var(--surface)] rounded-[var(--radius-xl)] p-7 sm:p-8 shadow-[var(--shadow-soft)] relative",
   
   // Typography Styles
   title: "text-[22px] font-semibold text-[color:var(--text)] tracking-tight",

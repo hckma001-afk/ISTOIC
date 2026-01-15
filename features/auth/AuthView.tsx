@@ -528,10 +528,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
             <div className={authStyles.card}>
           {stage === "WELCOME" && (
             <div className="text-center space-y-7 animate-slide-up">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-text-muted tracking-[0.24em] uppercase">ISTOIC</p>
-                <h1 className="text-3xl font-semibold text-text tracking-tight">Welcome back</h1>
-                <p className="text-sm text-text-muted">Secure access to your productivity workspace.</p>
+              <div className="space-y-3">
+                <p className="text-lg font-bold text-text tracking-[0.4em] uppercase">ISTOIC</p>
+                <h1 className="text-2xl font-semibold text-text tracking-tight">Sign in to your workspace</h1>
               </div>
 
               <div className="space-y-4">
@@ -559,32 +558,32 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                   Login dengan Email
                 </button>
 
-                <button
-                  onClick={() => setStage("REGISTER_MANUAL")}
-                  disabled={loading}
-                  className={authStyles.buttonGhost}
-                >
-                  Buat akun baru
-                </button>
-
-                <button
-                  onClick={() => setStage("FORGOT_ACCOUNT")}
-                  className="text-xs font-semibold text-text-muted hover:text-text transition-colors flex items-center gap-2 mx-auto"
-                >
-                  <HelpCircle size={12} /> Lupa akun?
-                </button>
-              </div>
-
-              {isSystemPinConfigured() && (
-                <div className="pt-2">
+                <div className="space-y-2 pt-2">
                   <button
-                    onClick={() => setStage("LOCKED")}
-                    className="text-xs font-semibold text-text-muted hover:text-text transition-colors flex items-center justify-center gap-2 mx-auto"
+                    onClick={() => setStage("REGISTER_MANUAL")}
+                    disabled={loading}
+                    className={authStyles.linkMuted + " mx-auto flex items-center gap-2"}
                   >
-                    <KeyRound size={12} /> Akses perangkat
+                    Buat akun baru
                   </button>
+
+                  <button
+                    onClick={() => setStage("FORGOT_ACCOUNT")}
+                    className="text-xs font-semibold text-text-muted hover:text-text transition-colors flex items-center gap-2 mx-auto"
+                  >
+                    <HelpCircle size={12} /> Lupa akun?
+                  </button>
+
+                  {isSystemPinConfigured() && (
+                    <button
+                      onClick={() => setStage("LOCKED")}
+                      className="text-xs font-semibold text-text-muted hover:text-text transition-colors flex items-center gap-2 mx-auto"
+                    >
+                      <KeyRound size={12} /> Akses perangkat
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
 
               {error && <div className={authStyles.alertError}>{error}</div>}
             </div>
