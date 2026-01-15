@@ -1,37 +1,74 @@
-/**
- * Authentication Styles
- * Uses CSS variables for consistency with main ISTOIC theme
- */
-export const authStyles = {
-  // Card & Container Styles
-  card: "bg-[color:var(--surface)] rounded-[var(--radius-xl)] p-7 sm:p-8 shadow-[var(--shadow-soft)] relative",
-  
-  // Typography Styles
-  title: "text-[22px] font-semibold text-[color:var(--text)] tracking-tight",
-  subtitle: "text-sm text-[color:var(--text-muted)] mt-1",
-  label: "text-xs font-semibold text-[color:var(--text-muted)]",
-  
-  // Input Styles
-  input:
-    "w-full bg-[color:var(--surface-2)] border border-[color:var(--border)] rounded-[var(--radius-xl)] px-4 py-4 text-sm font-semibold text-[color:var(--text)] focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--ring)]/30 outline-none transition-all placeholder:text-[color:var(--text-muted)]/70 min-h-[48px]",
-  inputIconWrap:
-    "w-full bg-[color:var(--surface-2)] border border-[color:var(--border)] rounded-[var(--radius-lg)] px-4 py-3 pl-11 text-sm font-semibold text-[color:var(--text)] focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--ring)]/30 outline-none transition-all placeholder:text-[color:var(--text-muted)]/70",
-  inputError: "border-[color:var(--danger)] focus:border-[color:var(--danger)] focus:ring-[color:var(--danger)]/20",
-  
-  // Button Styles
-  buttonPrimary:
-    "w-full py-3.5 bg-[color:var(--primary)] text-[color:var(--primary-contrast)] rounded-[var(--radius-xl)] font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-[var(--shadow-soft)] hover:brightness-95 active:scale-[0.99] disabled:opacity-60 min-h-[48px]",
-  buttonSecondary:
-    "w-full py-3.5 bg-[color:var(--surface-2)] text-[color:var(--text)] rounded-[var(--radius-xl)] font-semibold text-sm flex items-center justify-center gap-2 shadow-[var(--shadow-soft)] border border-[color:var(--border)] hover:border-[color:var(--primary)]/40 active:scale-[0.99] disabled:opacity-60 min-h-[48px]",
-  buttonGhost:
-    "w-full py-2.5 text-xs font-semibold text-[color:var(--text-muted)] hover:text-[color:var(--text)] flex items-center justify-center gap-2 transition-colors",
-  linkMuted: "text-xs font-semibold text-[color:var(--text-muted)] hover:text-[color:var(--text)] transition-colors",
-  
-  // Alert Styles
-  alertError:
-    "p-3 bg-[color:var(--danger)]/10 border border-[color:var(--danger)]/30 rounded-[var(--radius-md)] text-[color:var(--danger)] text-xs font-semibold text-center mb-4 flex items-center justify-center gap-2",
-  alertInfo:
-    "p-3 bg-[color:var(--info)]/10 border border-[color:var(--info)]/30 rounded-[var(--radius-md)] text-[color:var(--info)] text-xs font-semibold text-center mb-4",
-  alertSuccess:
-    "p-3 bg-[color:var(--success)]/10 border border-[color:var(--success)]/30 rounded-[var(--radius-md)] text-[color:var(--success)] text-xs font-semibold text-center mb-4",
+// authStyles.ts
+
+// Button Styles
+export const buttonStyles = {
+    primary: {
+        backgroundColor: '#007bff',
+        color: '#fff',
+        border: 'none',
+        padding: '10px 20px',
+        borderRadius: '5px',
+        cursor: 'pointer',
+    },
+    secondary: {
+        backgroundColor: '#6c757d',
+        color: '#fff',
+        border: 'none',
+        padding: '10px 20px',
+        borderRadius: '5px',
+        cursor: 'pointer',
+    }
+};
+
+// Input Styles
+export const inputStyles = {
+    default: {
+        border: '1px solid #ced4da',
+        padding: '10px',
+        borderRadius: '5px',
+        width: '100%',
+    },
+    error: {
+        border: '1px solid #dc3545',
+    }
+};
+
+// Card Styles
+export const cardStyles = {
+    default: {
+        border: '1px solid #ddd',
+        borderRadius: '5px',
+        padding: '20px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    },
+    highlighted: {
+        border: '1px solid #007bff',
+        backgroundColor: '#f8f9fa',
+    }
+};
+
+// Alert Styles
+export const alertStyles = {
+    success: {
+        backgroundColor: '#d4edda',
+        color: '#155724',
+        padding: '10px',
+        borderRadius: '5px',
+        border: '1px solid #c3e6cb',
+    },
+    danger: {
+        backgroundColor: '#f8d7da',
+        color: '#721c24',
+        padding: '10px',
+        borderRadius: '5px',
+        border: '1px solid #f5c6cb',
+    }
+};
+
+// Export all styles
+export default {
+    buttonStyles,
+    inputStyles,
+    cardStyles,
+    alertStyles,
 };
